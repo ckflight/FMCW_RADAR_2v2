@@ -5,7 +5,7 @@ I have designed the second version of FMCW Radar. In this design, i tried to imp
 I will not make pcb design files available for now because the design has a lot of details which required 1 year of search and development where i have tried lots of possibilities
 such as affects of regulators, opamp circuit optimazation and gain stages, optimazation of RF circuit and paths.
 Without using FPGA and high speed ADC (high sampling rate and decimation decreases noise floor)
-I managed to have noise floor around 90 dBFS with antennas and -115 dBFS with RX TX ports are 50 ohm terminated.
+I managed to have noise floor around -90 dBFS with antennas and -115 dBFS with RX TX ports are 50 ohm terminated.
 
 I am posting the processing files i have done on host side with Python for anyone to learn.
 
