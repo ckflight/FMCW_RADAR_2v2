@@ -13,7 +13,25 @@ from vispy.scene import SceneCanvas, visuals
 from vispy.app import use_app
 from vispy import scene
 
-record_file = open("Radar_Records/data_record.txt", "r")
+CANVAS_SIZE = (1400, 750)  # (width, height)
+
+# Plotting 4 figures is slow so i will plot time and fft continuously.
+# However other plots like phase and dbFs will be updated when they are selected.
+UPDATE_FFT_PLOT     = 1
+UPDATE_DBFS_PLOT    = 1
+UPDATE_TIME_PLOT    = 1
+UPDATE_PHASE_PLOT   = 0
+
+USB_PLOT            = 1
+MICROCARD_PLOT      = 0
+
+USE_AVERAGE_FILTER  = 0
+USE_FIR_FILTER      = 1
+REMOVE_CLUTTER      = 0
+FREQ_DIV            = 1
+FIR_SMOOTHING_N     = 100 # higher is smoother
+
+record_file = open("Radar_Records/radar2v2_horn_48kHz_2024_04_09_16_28_06_parking_lot_run.txt", "r")
 line_counter = 0
 
 data = str(record_file.readline())
@@ -33,8 +51,8 @@ print("Sweep Time : ", str(SWEEP_TIME), " microsec.")
 
 data = str(record_file.readline())
 line_counter += 1
-SWEEP_GAP = int(data[0:len(data) - 1]) / 1000000
-print("Sweep Gap : ", str(SWEEP_GAP), " microsec.")
+SWEEP_DELAY = int(data[0:len(data) - 1]) / 1000000
+print("Sweep Delay : ", str(SWEEP_DELAY), " microsec.")
 
 data = str(record_file.readline())
 line_counter += 1
@@ -98,29 +116,21 @@ line_counter += 1
 ADC_RESOLUTION = int(data[0:len(data) - 1])
 print("ADC Resolution : ", str(ADC_RESOLUTION))
 
+data = str(record_file.readline())
+line_counter += 1
+PHASE_DISTANCE = int(data[0:len(data) - 1])
+print("Phase Distance : ", str(PHASE_DISTANCE))
+
+RECORD_DATE = str(record_file.readline())
+line_counter += 1
+print("Date: ", str(RECORD_DATE))
+
 NUMBER_OF_INFO_LINES = line_counter
 line_number_textFile = 0
 
 is_restart_clicked = False
 
-CANVAS_SIZE = (1400, 750)  # (width, height)
-
-USB_PLOT = 1
-MICROCARD_PLOT = 0
-
-# Plotting 4 figures is slow so i will plot time and fft continuously.
-# However other plots like phase and dbFs will be updated when they are selected.
-UPDATE_FFT_PLOT     = 1
-UPDATE_DBFS_PLOT    = 1
-UPDATE_TIME_PLOT    = 1
-UPDATE_PHASE_PLOT   = 0
-
-USE_AVERAGE_FILTER  = 0
-USE_FIR_FILTER      = 1
-REMOVE_CLUTTER      = 0
-
 MAX_FREQ_RANGE      = SAMPLING_FREQUENCY / 2  # half of the maxsampling fre q.
-FREQ_DIV            = 1
 FREQ_RANGE          = int(MAX_FREQ_RANGE / FREQ_DIV)
 MAX_DISTANCE        = FREQ_RANGE / hz_per_m
 
@@ -132,7 +142,7 @@ if USE_AVERAGE_FILTER == 1:
         (FREQ_RANGE / 2)) + 2 - MOVING_AVERAGING_NUM  # this is the array size according to moving averaging.
 
 elif USE_FIR_FILTER == 1:
-    n = 100  # the larger n is, the smoother curve will be
+    n = FIR_SMOOTHING_N
     b = [1.0 / n] * n
     a = 1
     FFT_NUM_LINE_POINTS = int((FREQ_RANGE / 2))  # this is the array size according to moving averaging.
