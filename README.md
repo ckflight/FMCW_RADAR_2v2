@@ -39,7 +39,7 @@ It makes phase analysis by focusing on an object at specific location to measure
 ## Radar_Plot_WaterFall.py
 It plots the colormesh of the radar data for better visualisation. It has option of removing the clutter as well.
  * First plot: Home view with cars detected in km range.
- * Second plot: Me walking in a parking lot among lots of cars and trees from 100 to 130 m. There is a little waterway from 130 to 140 m so there might be ghosting articacts around it.
+ * Second plot: Me walking in a parking lot among lots of cars. There are trees from 100 to 130 m. There is a little waterway from 130 to 140 m so there might be some ghosting articacts around it.
 ![Untitled](https://github.com/ckflight/FMCW_RADAR_2v2/assets/61315249/b51daa43-6c51-4719-9d20-c8e37f4b8ec3)
 ![Untitled1](https://github.com/ckflight/FMCW_RADAR_2v2/assets/61315249/33c41898-376a-49c4-84ee-9779a1b87801)
 
