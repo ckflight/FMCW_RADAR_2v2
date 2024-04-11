@@ -3,7 +3,25 @@ import numpy as np
 from scipy import signal
 from scipy.signal import lfilter
 
-record_file = open("Radar_Records/sar_2.txt", "r")
+REMOVE_CLUTTER      = 0
+
+USE_FIR_FILTER      = 0
+FIR_SMOOTHING_N     = 2  # higher is smoother
+
+USE_AVERAGE_FILTER  = 0
+AVERAGE_N           = 10 # higher is smoother
+
+ABS_SCALER          = 1
+ABS_MULTIPLIER_MIN  = 1
+ABS_MULTIPLIER_MAX  = 30
+
+ABS_MULTIPLIER      = 1  # below 1.0 works for 100mhz, for high bw increases average value which makes a smoother plot
+
+HIGH_PASS_FILTER    = 0
+HIGHPASS_CUTOFF     = 5000
+HIGHPASS_ORDER      = 2
+
+record_file = open("Radar_Records/radar2v2_horn_48kHz_2024_04_09_16_32_01_parking_lot_run.txt", "r")
 line_counter = 0
 
 data = str(record_file.readline())
@@ -23,8 +41,8 @@ print("Sweep Time : ", str(SWEEP_TIME), " microsec.")
 
 data = str(record_file.readline())
 line_counter += 1
-SWEEP_GAP = int(data[0:len(data) - 1]) / 1000000
-print("Sweep Gap : ", str(SWEEP_GAP), " microsec.")
+SWEEP_DELAY = int(data[0:len(data) - 1]) / 1000000
+print("Sweep Delay : ", str(SWEEP_DELAY), " microsec.")
 
 data = str(record_file.readline())
 line_counter += 1
@@ -86,6 +104,15 @@ line_counter += 1
 ADC_RESOLUTION = int(data[0:len(data) - 1])
 print("ADC Resolution : ", str(ADC_RESOLUTION))
 
+data = str(record_file.readline())
+line_counter += 1
+PHASE_DISTANCE = int(data[0:len(data) - 1])
+print("Phase Distance : ", str(PHASE_DISTANCE))
+
+RECORD_DATE = str(record_file.readline())
+line_counter += 1
+print("Date: ", str(RECORD_DATE))
+
 def butter_highpass(cutoff, fs, order=5):
     nyq = 0.5 * fs
     normal_cutoff = cutoff / nyq
@@ -131,28 +158,34 @@ def FFT_Calculate(sample_data_float, sample_period):
     f_step = fs/bins
     fx = [f_step*i for i in range(0, bins)]
 
-    return fx, fft_abs
+    if ABS_SCALER == 1:
+        fft_abs_scaled = np.multiply(fft_abs, multi_values)
+        return fx, fft_abs_scaled
 
-USE_AVERAGE_FILTER  = 0
-USE_FIR_FILTER      = 0
-REMOVE_CLUTTER      = 0
-HIGH_PASS_FILTER    = 0
-
-HIGHPASS_CUTOFF     = 10000
-HIGHPASS_ORDER      = 5
+    if ABS_SCALER == 0:
+        return fx, fft_abs
 
 if USE_AVERAGE_FILTER == 1:
-    AVERAGING_NUM = 20
+    AVERAGING_NUM = AVERAGE_N
 
 elif USE_FIR_FILTER == 1:
-    n = 4  # the larger n is, the smoother curve will be
+    n = FIR_SMOOTHING_N
     b = [1.0 / n] * n
     a = 1
 
 time_values = np.linspace(0, int(RECORD_TIME), int(RECORD_COUNTER)) # Record Counter points in time
 # fft result fx is same for each calculation which is the freq range.
-fft_abs_2d  = np.zeros([int(NUMBER_OF_SAMPLES/2), int(len(time_values))])
+
+if USE_AVERAGE_FILTER:
+    FFT_NUM_LINE_POINTS = int((NUMBER_OF_SAMPLES / 2)) + 2 - AVERAGING_NUM - 1  # this is the array size according to moving averaging.
+    fft_abs_2d = np.zeros([FFT_NUM_LINE_POINTS, int(len(time_values))])
+else:
+    fft_abs_2d  = np.zeros([int(NUMBER_OF_SAMPLES/2), int(len(time_values))])
+
 samples_float_16bit = []
+
+multi_values = np.linspace(ABS_MULTIPLIER_MIN, ABS_MULTIPLIER_MAX, int(len(fft_abs_2d[:,0])))
+
 fft_current_array = np.zeros(int(NUMBER_OF_SAMPLES/2))
 
 min_fft_value           = 100000.0 # some number to start finding smaller value
@@ -253,12 +286,17 @@ print("Max fft value:", max_fft_value)
 print("Average fft value:", average_fft_value)
 fig = plt.figure(figsize=(12, 6))
 ax = fig.subplots()
+plt.xlabel('Time in sec')
+plt.ylabel('Distance in m')
 
 vmax = 0.0
 if HIGH_PASS_FILTER == 1:
     vmax = max_fft_value
 else:
-    vmax = average_fft_value * 1
+    if ABS_SCALER == 0:
+        vmax = average_fft_value * ABS_MULTIPLIER
+    else:
+        vmax = ABS_MULTIPLIER_MAX
 
 # Colormap color options:
 #https://matplotlib.org/stable/users/explain/colors/colormaps.html
