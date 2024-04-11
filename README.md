@@ -10,8 +10,9 @@ I managed to have noise floor around -90 dBFS with antennas and -115 dBFS with R
 I am posting the processing files i have done on host side with Python for anyone to learn.
 
 ## Capabilities of the radar:
- * Detection range up to 2km for building or terrain size objects and a few hundred meters for car like objects (i haven't checked the max distance for cars).
- * Detection of human in 120 meters in a hallway road with more than 50 cars, big trees throughout the road and buildings. This is such a noisy environment to detect small objects. (i haven't checked max distance for human size object at open area)
+ * Detection range up to 2-3km for building or terrain size objects.
+ * Detection of cars in 1 km from home view along with buildings and trees etc. (which is a very noisy environment for detection)
+ * Detection of human in few hundered meters in a hallway road with more than 50 cars, big trees throughout the road and buildings. This is such a noisy environment to detect small objects. (i haven't checked max distance for human size object at open area)
  * Detection of movements as small as 75 micrometers with phase measurement. Heartbeat, breathing like movements up to 2.5cm is detectable for a stationary object.
  * Detection of movements and stationary objects at closed area and short distances as small as a few meters.
  * Frequency synthesis with both PLL or DAC with analog switch for Frequency Modulated or Doppler measurement.
