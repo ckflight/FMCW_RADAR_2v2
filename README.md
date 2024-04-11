@@ -15,7 +15,9 @@ I am posting the processing files i have done on host side with Python for anyon
  * Detection of movements and stationary objects at closed area and short distances as small as a few meters.
  * Frequency synthesis with both PLL or DAC with analog switch for Frequency Modulated or Doppler measurement.
  * SDIO Micro SD Card interface for logging without host. (Faster logging is important in the case of decreasing the ramp delay between sweeps which improves the PLL step number which affects the frequency hopping resolution by making smaller steps between transitions)
- * In the design i added an Op-Amp auto gain stage but fix gain makes it less noisy so it is available as well.
+ * In the design i added an Op-Amp auto gain stage, but fix gain makes it less noisy so it is available as well.
+ * PCB stack-up has changed and i have redesigned the directional coupler which works better compared to previous version with better directivity.
+ * Port are better matched compared to the previous version which decreases reflection. Therefore, power is efficiently transferred without any loss. In this design radar can benefit from maximum gain without any loss.
 
 ![Untitled5](https://github.com/ckflight/FMCW_RADAR_2/assets/61315249/5fa3c864-8e84-449e-b6a0-8482ac3ec935)
    
