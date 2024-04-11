@@ -28,20 +28,23 @@ It plots the radar data with Python Qt5 and Vispy plotting tool which uses GPU i
 
 ## Radar_Plot_Phase.py 
 It makes phase analysis by focusing on an object at specific location to measure small movements like breathing and heartbeat.
- * The part between 4sec and 14 is slow and fast breathing measurement.
- * Rest of the plot belongs to my heartbeats.
+ * 6 to 12 sec: Slow breathing
+ * 11 to 16 sec: Fast breathing
+ * 17 to 20 sec: I holded my breath so pulses are detected
+ * 20 to 22 sec: A deep breath
+ * Rest of the plot belongs to my heartbeats
 
-![Untitled2](https://github.com/ckflight/FMCW_RADAR_2/assets/61315249/2a77585c-c142-442f-9b75-dcc71aa03fbb)
+![Untitled2](https://github.com/ckflight/FMCW_RADAR_2v2/assets/61315249/c3ede918-5830-4b8d-8c96-310ad28ab3b0)
 
 ## Radar_Plot_WaterFall.py
 It plots the colormesh of the radar data for better visualisation. It has option of removing the clutter as well.
- * First plot belongs to me walking in the hallway. I removed stationary objects.
- * Second plot is the long range measurement from my home's terrace. It detects buildings at 400m, 700m and 1.3km
-![Untitled2](https://github.com/ckflight/FMCW_RADAR_2/assets/61315249/5ac43d7a-e37b-4f26-bcc8-ff13260f47a8)
-![Untitled](https://github.com/ckflight/FMCW_RADAR_2/assets/61315249/b47b74a9-1097-497e-ab63-a60b8339eab3)
+ * First plot: Home view with cars detected in km range.
+ * Second plot: Me walking in a parking lot among lots of cars.
+![Untitled](https://github.com/ckflight/FMCW_RADAR_2v2/assets/61315249/b51daa43-6c51-4719-9d20-c8e37f4b8ec3)
+![Untitled1](https://github.com/ckflight/FMCW_RADAR_2v2/assets/61315249/33c41898-376a-49c4-84ee-9779a1b87801)
 
 ## Radar_Plot_SAR.py
 This file generates the Synthetic Aparture image. I am still working on this part and it will be updated as i make progress.
 I need to add omega_k algorithm for focusing the image for better resolution.
 
-![Untitled3](https://github.com/ckflight/FMCW_RADAR_2/assets/61315249/69b53866-90ac-4cb7-8b86-18fcbdcdc29c)
+![Untitled3](https://github.com/ckflight/FMCW_RADAR_2v2/assets/61315249/0eee0846-5074-4150-987e-e8686c60e892)
