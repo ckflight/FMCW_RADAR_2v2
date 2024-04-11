@@ -43,7 +43,7 @@ def hilbert_rvp(x, fs, kr):
     return np.fft.ifft(y, axis=-1)
 
 
-record_file = open("Radar_Records/sar_2.txt", "r")
+record_file = open("Radar_Records/radar2v2_horn_48kHz_2024_04_09_16_41_58_parking_lot_sar.txt", "r")
 line_counter = 0
 
 data = str(record_file.readline())
@@ -63,8 +63,8 @@ print("Sweep Time : ", str(SWEEP_TIME), " microsec.")
 
 data = str(record_file.readline())
 line_counter += 1
-SWEEP_GAP = int(data[0:len(data) - 1]) / 1000000
-print("Sweep Gap : ", str(SWEEP_GAP), " microsec.")
+SWEEP_DELAY = int(data[0:len(data) - 1]) / 1000000
+print("Sweep Delay : ", str(SWEEP_DELAY), " microsec.")
 
 data = str(record_file.readline())
 line_counter += 1
@@ -126,18 +126,27 @@ line_counter += 1
 ADC_RESOLUTION = int(data[0:len(data) - 1])
 print("ADC Resolution : ", str(ADC_RESOLUTION))
 
+data = str(record_file.readline())
+line_counter += 1
+PHASE_DISTANCE = int(data[0:len(data) - 1])
+print("Phase Distance : ", str(PHASE_DISTANCE))
+
+RECORD_DATE = str(record_file.readline())
+line_counter += 1
+print("Date: ", str(RECORD_DATE))
+
 rs                  = 0
-speed               = 1.70
+speed               = 1.75
 interpolate         = 1 #IFFT zero-padding amount, smooths final image
 cross_range_padding = 2 #FFT zero-padding amount, increases cross-range with reduced resolution
-dynamic_range       = 80 #Dynamic range of final image in dB
-ky_delta_spacing    = 1.75
+dynamic_range       = 60 #Dynamic range of final image in dB
+ky_delta_spacing    = 1.80
 window              = np.hanning
 c                   = 299792458
 
 # rows of a column are adc data and columns are record counte
 sample_increment    = 1
-data_counter        = 1000 # ignore first recordings until car moves
+data_counter        = 0 # ignore first recordings until car moves
 
 data1               = np.zeros([int(RECORD_COUNTER/sample_increment)-data_counter, NUMBER_OF_SAMPLES])
 
@@ -184,13 +193,11 @@ data = np.array(data1)
 
 fs              = SAMPLING_FREQUENCY
 tsweep          = SWEEP_TIME
-tdelay          = SWEEP_GAP + ((SWEEP_TIME + SWEEP_GAP) * (sample_increment - 1))
+tdelay          = SWEEP_DELAY + ((SWEEP_TIME + SWEEP_DELAY) * (sample_increment - 1))
 bw              = SWEEP_BW
 fc              = SWEEP_START + bw/2
 sweep_samples   = len(data[0])
 delta_crange    = (tsweep + tdelay) * speed
-if sample_increment == 1:
-    delta_crange    *= 2.0
 print('Cross range delta {:.3f} m, {:.3f} lambda'.format(delta_crange, delta_crange/(c/fc)))
 
 f = np.linspace(0, fs/2, sweep_samples//2+1)
@@ -308,7 +315,7 @@ crange = delta_crange*st.shape[0]/interpolate
 max_range = range1 * ky_delta / (2 * kr_delta)
 
 plt.figure()
-plt.title('Final image')
+plt.title('SAR Image')
 
 st = 20*np.log10(np.abs(st))
 imgplot = plt.imshow(st, aspect='auto', interpolation='none', extent=[0, range1,-crange/2.0,crange/2.0], origin='lower')
