@@ -3,6 +3,8 @@ import numpy as np
 from scipy import signal
 from scipy.signal import lfilter
 
+FIR_SMOOTHING_N     = 40 # higher is smoother
+
 record_file = open("Radar_Records/radar2v2_horn_fc48k_600_phase_heartbeat_breath.txt", "r")
 line_counter = 0
 
@@ -23,8 +25,8 @@ print("Sweep Time : ", str(SWEEP_TIME), " microsec.")
 
 data = str(record_file.readline())
 line_counter += 1
-SWEEP_GAP = int(data[0:len(data) - 1]) / 1000000
-print("Sweep Gap : ", str(SWEEP_GAP), " microsec.")
+SWEEP_DELAY = int(data[0:len(data) - 1]) / 1000000
+print("Sweep Delay : ", str(SWEEP_DELAY), " microsec.")
 
 data = str(record_file.readline())
 line_counter += 1
@@ -86,6 +88,15 @@ line_counter += 1
 ADC_RESOLUTION = int(data[0:len(data) - 1])
 print("ADC Resolution : ", str(ADC_RESOLUTION))
 
+data = str(record_file.readline())
+line_counter += 1
+PHASE_DISTANCE = int(data[0:len(data) - 1])
+print("Phase Distance : ", str(PHASE_DISTANCE))
+
+RECORD_DATE = str(record_file.readline())
+line_counter += 1
+print("Date: ", str(RECORD_DATE))
+
 def FFT_Calculate(sample_data_float, sample_period):
 
     w = np.hamming(len(sample_data_float))
@@ -103,29 +114,22 @@ def FFT_Calculate(sample_data_float, sample_period):
 
     return fx[0:len(fx)-1], fft_phs[0:len(fft_abs)-1], f_step
 
-# 10dB attenuator at TX, 3dB attenuator at RX is used for fc=32k
-# 10dB attenuator at TX, 6dB attenuator at RX is used for fc=80k
-# 0dB attenuator at TX, 0dB attenuator at RX is used for fc=80k for higher distance
-# Add length of the attenuators and cable to distance as well
-# distance -> 170 + 50 + 15 + 8 chair in front of sofa
-# distance -> 310 + 50 + 15 + 8 chair to terrace glass
-# distance -> 280 + 50 + 15 chair in next to table
-distance                = 170 + 50 + 15 + 8 # in centimeters
+distance                = PHASE_DISTANCE # in cm
 PHASE_FREQ              = (distance / 100.0) * hz_per_m
-ST                      = SWEEP_TIME + SWEEP_GAP
+ST                      = SWEEP_TIME + SWEEP_DELAY
 wavelength              = 3e11 / (SWEEP_START + (SWEEP_BW /2)) # in mm
 degrees_per_mm          = 360.0 / (wavelength / 2)
 
 time_values = np.linspace(0, int(RECORD_TIME), int(RECORD_COUNTER)) # Record Counter points in time
 samples_float_16bit = []
 
-data_counter    = 0 # ignore start of the record
 y = []
 x = []
+data_counter    = 0 # ignore start of the record
 time_counter = 0
 
 # Filter variables
-n = 10  # the larger n is, the smoother curve will be
+n = FIR_SMOOTHING_N
 b = [1.0 / n] * n
 a = 1
 
@@ -164,6 +168,7 @@ while data_counter < RECORD_COUNTER:
 
     # freq resolution is 1000 (fstep) so 12th element means 12k etc
     current_phase = (fp[int(PHASE_FREQ / fstep)])
+    current_phase += 180.0 # 0 to 360
 
     time_counter += 1
     y.append((current_phase / degrees_per_mm)*1000) # in micro meters
