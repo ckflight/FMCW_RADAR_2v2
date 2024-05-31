@@ -44,7 +44,7 @@ It plots the colormesh of the radar data for better visualisation. It has option
 ![Untitled1](https://github.com/ckflight/FMCW_RADAR_2v2/assets/61315249/33c41898-376a-49c4-84ee-9779a1b87801)
 
 ## Radar_Plot_SAR.py
-This file generates the Synthetic Aparture image. I am still working on this part and it will be updated as i make progress.
-I need to add omega_k algorithm for focusing the image for better resolution.
+This file generates the Synthetic Aparture image. I need to add omega_k algorithm for focusing the image for better resolution.
+I will add that part when i have motivation to do so :) 
 
 ![Untitled3](https://github.com/ckflight/FMCW_RADAR_2v2/assets/61315249/0eee0846-5074-4150-987e-e8686c60e892)
