@@ -1,4 +1,7 @@
 # FMCW_RADAR_2v2
+
+![Untitled5](https://github.com/ckflight/FMCW_RADAR_2/assets/61315249/5fa3c864-8e84-449e-b6a0-8482ac3ec935)
+
 Python process and analysis files for the updated v2.2 of Frequency Modulated Continuous Wave Radar Hardware Design
 
 I have designed the new version of FMCW Radar. In this design, i tried to improve receiver chain and adc dynamic range without using expensive components with a cost-effective approach. I will not make pcb design files available for this design because it has a lot of details which required 1 year of search and development where i have tried lots of possibilities such as effects of regulators, Op-Amp circuit optimization and gain stages, optimization of RF circuit and paths.
@@ -19,7 +22,6 @@ I am posting the processing files i have done on host side with Python for anyon
  * PCB stack-up has changed and i have re-designed the directional coupler which works better compared to the previous version with better directivity.
  * Port are better matched compared to the previous version which decreases reflection. Therefore, power is efficiently transferred without any loss. In this design radar can benefit from maximum gain without any loss.
 
-![Untitled5](https://github.com/ckflight/FMCW_RADAR_2/assets/61315249/5fa3c864-8e84-449e-b6a0-8482ac3ec935)
    
 ## Radar_Plot_QT.py
 It plots the radar data with Python Qt5 and Vispy plotting tool which uses GPU instead of CPU. Code plots the time domain, frequency domain, dBFS noise floor and phase through the whole sampling frequecy spectrum together with scale and restart options. It has thread based approach between Vispy and Qt classes by using DataSource which allows us to manage more data. The code has different filtering options and also can plot faster by decreasing frequency range.
