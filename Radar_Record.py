@@ -43,8 +43,11 @@ else:
 
 # VCO range is 0V = 5.1GHz and 10V = 6.3GHz range 1200 max
 # 100MHz long range check: usable range 5.2 to 6.1 max and 5.2-5.3 is best 5.3 to 5.8 is good
-SWEEP_START         = 5.30e9
-SWEEP_BW            = 600e6
+
+# important note: 250 microsec 600 mhz is too much 400 is ok. also 5.2 does not create correct range but for example 5.8 400 crates 5.8 to 6.2 range!!
+# for 250 microsec 5.6 200, 300, 400 mhz is correct
+SWEEP_START         = 5.60e9 
+SWEEP_BW            = 400e6
 TX_POWER_DBM        = 0
 SWEEP_TYPE          = 0             # 0 for Sawtooth, 1 for Triangular
 USE_PLL             = 1             # 0 for DAC, 1 for PLL

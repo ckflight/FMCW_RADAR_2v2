@@ -21,7 +21,7 @@ HIGH_PASS_FILTER    = 0
 HIGHPASS_CUTOFF     = 5000
 HIGHPASS_ORDER      = 2
 
-record_file = open("Radar_Records/radar2v2_horn_48kHz_2024_04_09_16_32_01_parking_lot_run.txt", "r")
+record_file = open("Radar_Records/radar2v2_horn_48kHz_2024_04_09_16_41_58_parking_lot_sar.txt", "r")
 line_counter = 0
 
 data = str(record_file.readline())
