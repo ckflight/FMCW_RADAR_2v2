@@ -9,8 +9,9 @@ import os
 import binascii
 
 ADC_SELECT          = 0             # 0 for ADC DMA, 1 for External ADC MAX1426
-RECORD_TIME         = 80            # in sec
+RECORD_TIME         = 10            # in sec
 TEST_DEVICE         = 1             # 0 STM32F4, 1 STM32H7, 2 FPGA
+OPERATING_SYSTEM    = 1             # 0 MAC, 1 UBUNTU, 2 WINDOWS (Havent implemented serial on windows.)
 
 if ADC_SELECT == 0:
     # 1ms sampling numbers are actual sampling khz freq.
@@ -43,14 +44,14 @@ else:
 # VCO range is 0V = 5.1GHz and 10V = 6.3GHz range 1200 max
 # 100MHz long range check: usable range 5.2 to 6.1 max and 5.2-5.3 is best 5.3 to 5.8 is good
 SWEEP_START         = 5.30e9
-SWEEP_BW            = 700e6
+SWEEP_BW            = 600e6
 TX_POWER_DBM        = 0
 SWEEP_TYPE          = 0             # 0 for Sawtooth, 1 for Triangular
 USE_PLL             = 1             # 0 for DAC, 1 for PLL
-TX_MODE             = 1             # 0 for continuous tx, 1 for on off with tx, 2 for testing when tx off
+TX_MODE             = 2#1           # 0 for continuous tx, 1 for on off with tx, 2 for testing when tx off
 GAIN                = 10            # 1 to 70 stmf4, 3 to 85 for H7
 DATA_LOG            = 0             # 0 for USB transfer, 1 for MicroCard Log
-SWEEP_TIME          = 1.0e-3        # in sec, now less than 1ms is working as well
+SWEEP_TIME          = 250e-6        #1.0e-3 # in sec, now less than 1ms is working as well
 CHECK_MODE          = 0             # 0 ADC_DMA SAMPLING, 1 ADC_DMA USB, 2 MAX1426, 4 FPGA
 USB_DATA_TYPE       = 1             # 0-> floating/2 x100 is sent ove usb, 1-> 16bit data is sent
 ADC_RESOLUTION      = 16
@@ -265,15 +266,33 @@ def Configuration_Process():
     return dbm, dbm_voltage
 
 if TEST_DEVICE == 0:
-    ser = Serial_Init_Specific("/dev/cu.usbmodem3158397630341")
+    if OPERATING_SYSTEM == 0:
+        ser = Serial_Init_Specific("/dev/cu.usbmodem3158397630341")
+    elif OPERATING_SYSTEM == 1:
+        ser = Serial_Init_Specific("/dev/ttyACM0")
+    elif OPERATING_SYSTEM == 2:
+        ser = Serial_Init_Specific("/dev/cu.usbmodem3158397630341")
+
     TX_POWER_DBM, TX_POWER_DBM_VOLTAGE = Configuration_Process()
 
 elif TEST_DEVICE == 1:
-    ser = Serial_Init_Specific("/dev/tty.usbmodem3878386530331")
+    if OPERATING_SYSTEM == 0:
+        ser = Serial_Init_Specific("/dev/tty.usbmodem3878386530331")
+    elif OPERATING_SYSTEM == 1:
+        ser = Serial_Init_Specific("/dev/ttyACM0")
+    elif OPERATING_SYSTEM == 2:
+        ser = Serial_Init_Specific("/dev/cu.usbmodem3158397630341")
+
     TX_POWER_DBM, TX_POWER_DBM_VOLTAGE = Configuration_Process()
 
 elif TEST_DEVICE == 2:
-    ser = Serial_Init_Specific("/dev/cu.usbmodem3158397630341")
+    if OPERATING_SYSTEM == 0:
+        ser = Serial_Init_Specific("/dev/cu.usbmodem3158397630341")
+    elif OPERATING_SYSTEM == 1:
+        ser = Serial_Init_Specific("/dev/ttyACM0")
+    elif OPERATING_SYSTEM == 2:
+        ser = Serial_Init_Specific("/dev/cu.usbmodem3158397630341")
+
     TX_POWER_DBM, TX_POWER_DBM_VOLTAGE = Configuration_Process()
     ser.close()#!!!!!!!!!!!!!!!!!!!
 
