@@ -29,7 +29,7 @@ if ADC_SELECT == 0:
         # 14bit Options: 4.14MHz(4140), 3.72MHz(3720)
         # 12bit Options: 4.64MHz(4640), 4.14MHz(4140)
         # Oversampling 2 works with highest rates for each bit options.
-        SAMPLE_AVERAGING = 2 #1, 2, 4, 8, 16
+        SAMPLE_AVERAGING = 1 #1, 2, 4, 8, 16
         SAMPLING_FREQUENCY = int(3720000 / SAMPLE_AVERAGING) # oversampling 2 is enabled
         NUMBER_OF_SAMPLES = int(SAMPLING_FREQUENCY / 1000) * 1  # NUMBER_OF_SAMPLES(16bit) = SAMPLING_FREQUENCY * SWEEP_TIME(int)
 
@@ -53,7 +53,7 @@ SWEEP_TYPE          = 0             # 0 for Sawtooth, 1 for Triangular
 USE_PLL             = 1             # 0 for DAC, 1 for PLL
 TX_MODE             = 2#1           # 0 for continuous tx, 1 for on off with tx, 2 for testing when tx off
 GAIN                = 10            # 1 to 70 stmf4, 3 to 85 for H7
-DATA_LOG            = 0             # 0 for USB transfer, 1 for MicroCard Log
+DATA_LOG            = 1             # 0 for USB transfer, 1 for MicroCard Log
 SWEEP_TIME          = 250e-6        #1.0e-3 # in sec, now less than 1ms is working as well
 CHECK_MODE          = 0             # 0 ADC_DMA SAMPLING, 1 ADC_DMA USB, 2 MAX1426, 4 FPGA
 USB_DATA_TYPE       = 1             # 0-> floating/2 x100 is sent ove usb, 1-> 16bit data is sent
