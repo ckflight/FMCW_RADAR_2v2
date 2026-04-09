@@ -11,7 +11,7 @@ import binascii
 ADC_SELECT          = 0             # 0 for ADC DMA, 1 for External ADC MAX1426
 RECORD_TIME         = 10            # in sec
 TEST_DEVICE         = 1             # 0 STM32F4, 1 STM32H7, 2 FPGA
-OPERATING_SYSTEM    = 1             # 0 MAC, 1 UBUNTU, 2 WINDOWS (Havent implemented serial on windows.)
+OPERATING_SYSTEM    = 2             # 0 MAC, 1 UBUNTU, 2 WINDOWS (Havent implemented serial on windows.)
 
 if ADC_SELECT == 0:
     # 1ms sampling numbers are actual sampling khz freq.
@@ -274,7 +274,7 @@ if TEST_DEVICE == 0:
     elif OPERATING_SYSTEM == 1:
         ser = Serial_Init_Specific("/dev/ttyACM0")
     elif OPERATING_SYSTEM == 2:
-        ser = Serial_Init_Specific("/dev/cu.usbmodem3158397630341")
+        ser = Serial_Init_Specific("COM41")
 
     TX_POWER_DBM, TX_POWER_DBM_VOLTAGE = Configuration_Process()
 
@@ -284,7 +284,7 @@ elif TEST_DEVICE == 1:
     elif OPERATING_SYSTEM == 1:
         ser = Serial_Init_Specific("/dev/ttyACM0")
     elif OPERATING_SYSTEM == 2:
-        ser = Serial_Init_Specific("/dev/cu.usbmodem3158397630341")
+        ser = Serial_Init_Specific("COM41")
 
     TX_POWER_DBM, TX_POWER_DBM_VOLTAGE = Configuration_Process()
 
@@ -294,7 +294,7 @@ elif TEST_DEVICE == 2:
     elif OPERATING_SYSTEM == 1:
         ser = Serial_Init_Specific("/dev/ttyACM0")
     elif OPERATING_SYSTEM == 2:
-        ser = Serial_Init_Specific("/dev/cu.usbmodem3158397630341")
+        ser = Serial_Init_Specific("COM41")
 
     TX_POWER_DBM, TX_POWER_DBM_VOLTAGE = Configuration_Process()
     ser.close()#!!!!!!!!!!!!!!!!!!!

@@ -1,7 +1,13 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
-BIN_FILE = "/home/ck/Desktop/flight_log.bin"
+OPERATING_SYSTEM = 2   # 1 = Ubuntu/Linux, 2 = Windows
+
+if OPERATING_SYSTEM == 1:  # Ubuntu
+    BIN_FILE = "/home/ck/Desktop/flight_log.bin"
+elif OPERATING_SYSTEM == 2:  # Windows
+    BIN_FILE = r"C:\Users\CK\Desktop\flight_log.bin"
+    
 FS = 3_720_000
 SAMPLES_PER_CHIRP = 900
 ADC_BITS = 16
