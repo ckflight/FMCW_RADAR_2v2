@@ -31,7 +31,7 @@ REMOVE_CLUTTER      = 0
 FREQ_DIV            = 1
 FIR_SMOOTHING_N     = 100 # higher is smoother
 
-record_file = open("Radar_Records/radar2v2_horn_48kHz_2024_04_09_16_28_06_parking_lot_run.txt", "r")
+record_file = open("Radar_Records/data_record.txt", "r")
 line_counter = 0
 
 data = str(record_file.readline())

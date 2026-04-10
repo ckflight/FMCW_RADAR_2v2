@@ -9,9 +9,9 @@ import os
 import binascii
 
 ADC_SELECT          = 0             # 0 for ADC DMA, 1 for External ADC MAX1426
-RECORD_TIME         = 10            # in sec
+RECORD_TIME         = 10             # in sec
 TEST_DEVICE         = 1             # 0 STM32F4, 1 STM32H7, 2 FPGA
-OPERATING_SYSTEM    = 2             # 0 MAC, 1 UBUNTU, 2 WINDOWS (Havent implemented serial on windows.)
+OPERATING_SYSTEM    = 1             # 0 MAC, 1 UBUNTU, 2 WINDOWS (Havent implemented serial on windows.)
 
 if ADC_SELECT == 0:
     # 1ms sampling numbers are actual sampling khz freq.
@@ -29,7 +29,7 @@ if ADC_SELECT == 0:
         # 14bit Options: 4.14MHz(4140), 3.72MHz(3720)
         # 12bit Options: 4.64MHz(4640), 4.14MHz(4140)
         # Oversampling 2 works with highest rates for each bit options.
-        SAMPLE_AVERAGING = 1 #1, 2, 4, 8, 16
+        SAMPLE_AVERAGING = 2 #1, 2, 4, 8, 16
         SAMPLING_FREQUENCY = int(3720000 / SAMPLE_AVERAGING) # oversampling 2 is enabled
         NUMBER_OF_SAMPLES = int(SAMPLING_FREQUENCY / 1000) * 1  # NUMBER_OF_SAMPLES(16bit) = SAMPLING_FREQUENCY * SWEEP_TIME(int)
 
@@ -44,23 +44,26 @@ else:
 # VCO range is 0V = 5.1GHz and 10V = 6.3GHz range 1200 max
 # 100MHz long range check: usable range 5.2 to 6.1 max and 5.2-5.3 is best 5.3 to 5.8 is good
 
-# important note: 250 microsec 600 mhz is too much 400 is ok. also 5.2 does not create correct range but for example 5.8 400 crates 5.8 to 6.2 range!!
-# for 250 microsec 5.6 200, 300, 400 mhz is correct
-SWEEP_START         = 5.60e9 
-SWEEP_BW            = 400e6
+# important note: After changing R and C values of pll circuit freq ramp bw values are perfect.
+SWEEP_START         = 5.20e9 
+SWEEP_BW            = 1000e6
 TX_POWER_DBM        = 0
 SWEEP_TYPE          = 0             # 0 for Sawtooth, 1 for Triangular
 USE_PLL             = 1             # 0 for DAC, 1 for PLL
-TX_MODE             = 2#1           # 0 for continuous tx, 1 for on off with tx, 2 for testing when tx off
+TX_MODE             = 1             # 0 for continuous tx, 1 for on off with tx, 2 for testing when tx off
 GAIN                = 10            # 1 to 70 stmf4, 3 to 85 for H7
 DATA_LOG            = 1             # 0 for USB transfer, 1 for MicroCard Log
-SWEEP_TIME          = 250e-6        #1.0e-3 # in sec, now less than 1ms is working as well
+SWEEP_TIME          = 250e-6        # 1.0e-3 # in sec, now less than 1ms is working as well
 CHECK_MODE          = 0             # 0 ADC_DMA SAMPLING, 1 ADC_DMA USB, 2 MAX1426, 4 FPGA
 USB_DATA_TYPE       = 1             # 0-> floating/2 x100 is sent ove usb, 1-> 16bit data is sent
 ADC_RESOLUTION      = 16
+PHASE_DISTANCE      = 380   # cm
 
 if DATA_LOG == 1:
-    SWEEP_GAP = 1000 * 1.0e-6
+    SWEEP_GAP = 20 * 1.0e-6
+    SAMPLE_AVERAGING = 1 # overwrite it!!
+    SAMPLING_FREQUENCY = int(3720000 / SAMPLE_AVERAGING) 
+    NUMBER_OF_SAMPLES = int(SAMPLING_FREQUENCY / 1000) * 1
 else:
     SWEEP_GAP = (2.0 * NUMBER_OF_SAMPLES) * 1.0e-6  # in sec max 4000
 
@@ -341,6 +344,8 @@ if DATA_LOG == 0:
     data_record_file.write(str(USB_DATA_TYPE))
     data_record_file.write("\r\n")
     data_record_file.write(str(ADC_RESOLUTION))
+    data_record_file.write("\r\n")
+    data_record_file.write(str(PHASE_DISTANCE))
     data_record_file.write("\r\n")
 
     start_time = time.time()
