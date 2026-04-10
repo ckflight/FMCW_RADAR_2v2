@@ -1,18 +1,20 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
-OPERATING_SYSTEM = 1   # 1 = Ubuntu/Linux, 2 = Windows
-
-if OPERATING_SYSTEM == 1:
-    BIN_FILE = "/home/ck/Desktop/flight_log.bin"
-elif OPERATING_SYSTEM == 2:
-    BIN_FILE = r"C:\Users\CK\Desktop\flight_log.bin"
+# -----------------------------
+# CONFIG
+# -----------------------------
+BIN_FILE = "/home/ck/Desktop/flight_log.bin"
 
 INFO_SECTOR_SIZE = 512
-MAX_RANGE_TO_SHOW = 200     # meters
-RANGE_BIN_LIMIT = None      # set e.g. 512 if you want faster plotting
-CPI_INDEX_TO_SHOW = 0       # which CPI to visualize
+MAX_RANGE_TO_SHOW = 100
+RANGE_BIN_LIMIT = 512      # speed vs resolution
+DISPLAY_STEP_CPI = 1       # skip CPIs if needed (2,4,...)
+PAUSE_TIME = 0.1          # playback speed
 
+# -----------------------------
+# Helpers
+# -----------------------------
 def read_u32_be(buf, offset):
     return ((buf[offset] << 24) |
             (buf[offset + 1] << 16) |
@@ -24,180 +26,154 @@ def read_u16_be(buf, offset):
             (buf[offset + 1]))
 
 # -----------------------------
-# Read file once
+# Read file
 # -----------------------------
 with open(BIN_FILE, "rb") as f:
     file_bytes = f.read()
-
-if len(file_bytes) < INFO_SECTOR_SIZE:
-    raise ValueError("File is smaller than 512-byte info sector")
 
 info = file_bytes[:INFO_SECTOR_SIZE]
 raw_data = file_bytes[INFO_SECTOR_SIZE:]
 
 # -----------------------------
-# Decode info sector
+# Decode info
 # -----------------------------
 idx = 0
-
-RECORD_COUNTER     = read_u32_be(info, idx); idx += 4
-RECORD_TIME        = read_u32_be(info, idx); idx += 4
-SWEEP_TIME_US      = read_u32_be(info, idx); idx += 4
-SWEEP_GAP_US       = read_u32_be(info, idx); idx += 4
+idx += 4  # RECORD_COUNTER
+idx += 4  # RECORD_TIME
+SWEEP_TIME_US = read_u32_be(info, idx); idx += 4
+SWEEP_GAP_US  = read_u32_be(info, idx); idx += 4
 SWEEP_START_SCALED = read_u32_be(info, idx); idx += 4
 SWEEP_BW_SCALED    = read_u32_be(info, idx); idx += 4
 FS_KHZ             = read_u32_be(info, idx); idx += 4
 SAMPLES_PER_CHIRP  = read_u32_be(info, idx); idx += 4
 
-TX_MODE            = info[idx]; idx += 1
-TX_POWER_DBM       = info[idx]; idx += 1
-TX_POWER_DBM_VOLT  = info[idx]; idx += 1
+idx += 3  # skip TX params
 
-HZ_PER_M           = read_u32_be(info, idx); idx += 4
+HZ_PER_M = read_u32_be(info, idx); idx += 4
 
-DATA_LOG           = info[idx]; idx += 1
-ADC_SELECT         = info[idx]; idx += 1
-USB_DATA_TYPE      = info[idx]; idx += 1
-ADC_BITS           = info[idx]; idx += 1
+idx += 4  # DATA_LOG etc
 
-CHIRP_END_TIMER_US      = read_u32_be(info, idx); idx += 4
-CPI_END_TIMER_US        = read_u32_be(info, idx); idx += 4
-CARD_WRITE_END_TIMER_US = read_u32_be(info, idx); idx += 4
+idx += 12  # timers
 
-CHIRPS_PER_CPI          = read_u16_be(info, idx); idx += 2
-CPI_COUNTER             = read_u32_be(info, idx); idx += 4
-
-FS = FS_KHZ * 1000
-SWEEP_TIME = SWEEP_TIME_US * 1e-6
-SWEEP_GAP = SWEEP_GAP_US * 1e-6
-SWEEP_START = SWEEP_START_SCALED * 1e7
-SWEEP_BW = SWEEP_BW_SCALED * 1e6
-
-PRF = 1e6 / (SWEEP_TIME_US + SWEEP_GAP_US)
-
-print("----- SYSTEM -----")
-print(f"FS                  : {FS/1e6:.2f} MHz")
-print(f"SAMPLES_PER_CHIRP   : {SAMPLES_PER_CHIRP}")
-print(f"HZ_PER_M            : {HZ_PER_M}")
-print(f"CHIRPS_PER_CPI      : {CHIRPS_PER_CPI}")
-print(f"PRF                 : {PRF:.2f} Hz")
+CHIRPS_PER_CPI = read_u16_be(info, idx); idx += 2
+idx += 4  # CPI_COUNTER
 
 # -----------------------------
-# Read ADC data
+# Derived values
+# -----------------------------
+FS = FS_KHZ * 1000
+PRF = 1e6 / (SWEEP_TIME_US + SWEEP_GAP_US)
+
+SWEEP_START = SWEEP_START_SCALED * 1e7
+SWEEP_BW    = SWEEP_BW_SCALED * 1e6
+
+fc = SWEEP_START + SWEEP_BW / 2
+lam = 3e8 / fc
+
+print("FS:", FS)
+print("Samples/chirp:", SAMPLES_PER_CHIRP)
+print("Chirps/CPI:", CHIRPS_PER_CPI)
+print("PRF:", PRF)
+
+# -----------------------------
+# Load ADC data
 # -----------------------------
 data = np.frombuffer(raw_data, dtype='<u2')
 
 num_chirps = len(data) // SAMPLES_PER_CHIRP
 data = data[:num_chirps * SAMPLES_PER_CHIRP]
+
 chirps = data.reshape(num_chirps, SAMPLES_PER_CHIRP)
 
-print("\n----- DATA -----")
-print("Total samples :", len(data))
-print("Num chirps    :", num_chirps)
-print("Samples/chirp :", SAMPLES_PER_CHIRP)
-
-# unsigned ADC -> centered float
+# center ADC
 chirps = chirps.astype(np.float32) - 32768.0
 
 # -----------------------------
-# Split into full CPIs
+# Split CPIs
 # -----------------------------
 num_cpis = num_chirps // CHIRPS_PER_CPI
-if num_cpis == 0:
-    raise ValueError("Not enough chirps for one CPI")
-
 chirps = chirps[:num_cpis * CHIRPS_PER_CPI]
+
 cpis = chirps.reshape(num_cpis, CHIRPS_PER_CPI, SAMPLES_PER_CHIRP)
 
-print("Num CPIs      :", num_cpis)
-
-if CPI_INDEX_TO_SHOW >= num_cpis:
-    raise ValueError("CPI_INDEX_TO_SHOW exceeds available CPI count")
-
-cpi = cpis[CPI_INDEX_TO_SHOW]   # shape: [chirps_per_cpi, samples_per_chirp]
+print("Num CPIs:", num_cpis)
 
 # -----------------------------
-# Windowing
+# FFT preparation
 # -----------------------------
-w_range = np.hanning(SAMPLES_PER_CHIRP).astype(np.float32)
-w_dopp = np.hanning(CHIRPS_PER_CPI).astype(np.float32)
+w_range = np.hanning(SAMPLES_PER_CHIRP)
+w_dopp  = np.hanning(CHIRPS_PER_CPI)
 
-# remove per-chirp DC
-cpi = cpi - np.mean(cpi, axis=1, keepdims=True)
+freq = np.fft.rfftfreq(SAMPLES_PER_CHIRP, d=1/FS)
+freq = freq[:RANGE_BIN_LIMIT]
 
-# -----------------------------
-# Range FFT
-# -----------------------------
-cpi_range_win = cpi * w_range[None, :]
-range_fft = np.fft.rfft(cpi_range_win, axis=1)
+range_m = freq / HZ_PER_M
+range_mask = range_m <= MAX_RANGE_TO_SHOW
 
-# suppress leakage/DC bins
-range_fft[:, :5] = 0
+range_m = range_m[range_mask]
 
-# optional crop range bins for speed
-if RANGE_BIN_LIMIT is not None:
-    range_fft = range_fft[:, :RANGE_BIN_LIMIT]
-
-num_range_bins = range_fft.shape[1]
+doppler = np.fft.fftshift(np.fft.fftfreq(CHIRPS_PER_CPI, d=1/PRF))
+velocity = doppler * lam / 2
 
 # -----------------------------
-# Doppler FFT
+# Setup plot
 # -----------------------------
-range_fft_dopp_win = range_fft * w_dopp[:, None]
-rdm = np.fft.fft(range_fft_dopp_win, axis=0)
-rdm = np.fft.fftshift(rdm, axes=0)
+plt.ion()
+fig, ax = plt.subplots(figsize=(10,6))
 
-rdm_mag = 20 * np.log10(np.abs(rdm) + 1e-12)
+dummy = np.zeros((CHIRPS_PER_CPI, len(range_m)))
 
-# normalize for display
-rdm_mag = rdm_mag - np.max(rdm_mag)
+im = ax.imshow(dummy,
+               aspect='auto',
+               origin='lower',
+               extent=[range_m[0], range_m[-1], velocity[0], velocity[-1]],
+               vmin=-60, vmax=0)
 
-# -----------------------------
-# Axes
-# -----------------------------
-freq_hz = np.fft.rfftfreq(SAMPLES_PER_CHIRP, d=1.0 / FS)[:num_range_bins]
-if HZ_PER_M > 0:
-    range_m = freq_hz / HZ_PER_M
-else:
-    range_m = np.arange(num_range_bins)
+ax.set_xlabel("Range (m)")
+ax.set_ylabel("Velocity (m/s)")
+title = ax.set_title("Range-Doppler Map")
 
-doppler_hz = np.fft.fftshift(np.fft.fftfreq(CHIRPS_PER_CPI, d=1.0 / PRF))
-
-# if you want velocity axis:
-fc = SWEEP_START + SWEEP_BW / 2.0
-lam = 3e8 / fc
-velocity_m_s = doppler_hz * lam / 2.0
+fig.colorbar(im, ax=ax)
+fig.tight_layout()
 
 # -----------------------------
-# Plot range profile average over CPI
+# MAIN LOOP (VIDEO)
 # -----------------------------
-avg_range_profile = 20 * np.log10(np.mean(np.abs(range_fft), axis=0) + 1e-12)
-avg_range_profile = avg_range_profile - np.max(avg_range_profile)
+# choose one CPI
+from scipy.signal import hilbert
 
-plt.figure(figsize=(10, 5))
-plt.plot(range_m, avg_range_profile)
-plt.xlabel("Range (m)")
-plt.ylabel("Magnitude (dB)")
-plt.title(f"Average Range Profile - CPI {CPI_INDEX_TO_SHOW}")
-plt.grid(True)
-plt.xlim(0, min(MAX_RANGE_TO_SHOW, np.max(range_m)))
-plt.ylim(-80, 5)
-plt.show()
+for cpi_idx in range(0, num_cpis, DISPLAY_STEP_CPI):
 
-# -----------------------------
-# Plot Range-Doppler map
-# -----------------------------
-plt.figure(figsize=(10, 6))
-plt.imshow(
-    rdm_mag,
-    aspect='auto',
-    origin='lower',
-    extent=[range_m[0], range_m[-1], velocity_m_s[0], velocity_m_s[-1]]
-)
-plt.xlabel("Range (m)")
-plt.ylabel("Velocity (m/s)")
-plt.title(f"Range-Doppler Map - CPI {CPI_INDEX_TO_SHOW}")
-plt.colorbar(label="dB")
-plt.clim(-60, 0)
-plt.xlim(0, min(MAX_RANGE_TO_SHOW, np.max(range_m)))
+    cpi = cpis[cpi_idx]
+
+    # convert to analytic signal (IQ)
+    cpi = hilbert(cpi, axis=1)
+
+    # remove DC per chirp
+    cpi = cpi - np.mean(cpi, axis=1, keepdims=True)
+
+    # RANGE FFT (complex now)
+    rfft = np.fft.fft(cpi * w_range, axis=1)
+
+    rfft[:, :5] = 0
+
+    rfft = rfft[:, :RANGE_BIN_LIMIT]
+    rfft = rfft[:, range_mask]
+
+    # clutter removal (important)
+    rfft = rfft - np.mean(rfft, axis=0, keepdims=True)
+
+    # DOPPLER FFT
+    rdm = np.fft.fft(rfft * w_dopp[:, None], axis=0)
+    rdm = np.fft.fftshift(rdm, axes=0)
+
+    mag = 20*np.log10(np.abs(rdm) + 1e-12)
+    mag -= np.max(mag)
+
+    im.set_data(mag)
+    title.set_text(f"CPI {cpi_idx}")
+
+    plt.pause(PAUSE_TIME)
+
+plt.ioff()
 plt.show()

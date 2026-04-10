@@ -9,7 +9,7 @@ import os
 import binascii
 
 ADC_SELECT          = 0             # 0 for ADC DMA, 1 for External ADC MAX1426
-RECORD_TIME         = 10             # in sec
+RECORD_TIME         = 20             # in sec
 TEST_DEVICE         = 1             # 0 STM32F4, 1 STM32H7, 2 FPGA
 OPERATING_SYSTEM    = 1             # 0 MAC, 1 UBUNTU, 2 WINDOWS (Havent implemented serial on windows.)
 

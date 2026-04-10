@@ -9,8 +9,8 @@ elif OPERATING_SYSTEM == 2:
     BIN_FILE = r"C:\Users\CK\Desktop\flight_log.bin"
 
 INFO_SECTOR_SIZE = 512
-DISPLAY_STEP = 10            # animate every Nth chirp
-MAX_RANGE_TO_SHOW = 200     # meters
+DISPLAY_STEP = 5            # animate every Nth chirp
+MAX_RANGE_TO_SHOW = 100     # meters
 AVG_CHIRPS = 64             # number of chirps for averaged FFT
 
 def read_u32_be(buf, offset):
