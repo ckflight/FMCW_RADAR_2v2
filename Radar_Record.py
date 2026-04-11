@@ -9,40 +9,9 @@ import os
 import binascii
 
 ADC_SELECT          = 0             # 0 for ADC DMA, 1 for External ADC MAX1426
-RECORD_TIME         = 20             # in sec
+RECORD_TIME         = 10             # in sec
 TEST_DEVICE         = 1             # 0 STM32F4, 1 STM32H7, 2 FPGA
 OPERATING_SYSTEM    = 1             # 0 MAC, 1 UBUNTU, 2 WINDOWS (Havent implemented serial on windows.)
-
-if ADC_SELECT == 0:
-    # 1ms sampling numbers are actual sampling khz freq.
-
-    if TEST_DEVICE == 0:
-        # Options: 518KHz(900), 618KHz(900), 778KHz(700), 933KHz(933smp),
-        # 1.050MHz(1050smp), 1.556MHz(1556smp), 2.8 MHz(2700smp)
-        SAMPLING_FREQUENCY = 1050000 # 58dbfs noise floor
-        #SAMPLING_FREQUENCY = 1550000  # 58dbfs noise floor
-        #SAMPLING_FREQUENCY = 2600000 # 70dbfs noise floor
-        NUMBER_OF_SAMPLES = int(SAMPLING_FREQUENCY / 1000) * 1  # NUMBER_OF_SAMPLES(16bit) = SAMPLING_FREQUENCY * SWEEP_TIME(int)
-
-    if TEST_DEVICE == 1:
-        # 16bit Options: 3.72MHz(3720), 3.38MHz(3380)
-        # 14bit Options: 4.14MHz(4140), 3.72MHz(3720)
-        # 12bit Options: 4.64MHz(4640), 4.14MHz(4140)
-        # Oversampling 2 works with highest rates for each bit options.
-        SAMPLE_AVERAGING = 2 #1, 2, 4, 8, 16
-        SAMPLING_FREQUENCY = int(3720000 / SAMPLE_AVERAGING) # oversampling 2 is enabled
-        NUMBER_OF_SAMPLES = int(SAMPLING_FREQUENCY / 1000) * 1  # NUMBER_OF_SAMPLES(16bit) = SAMPLING_FREQUENCY * SWEEP_TIME(int)
-
-    if TEST_DEVICE == 2:
-        SAMPLING_FREQUENCY = 500000
-        NUMBER_OF_SAMPLES = int(SAMPLING_FREQUENCY / 1000) * 1  # NUMBER_OF_SAMPLES(16bit) = SAMPLING_FREQUENCY * SWEEP_TIME(int)
-        BUFFER_LEN = 500*1
-else:
-    SAMPLING_FREQUENCY  = 400000
-    NUMBER_OF_SAMPLES   = 400  # NUMBER_OF_SAMPLE(16bit) = SAMPLING_FREQUENCY * SWEEP_TIME(int)
-
-# VCO range is 0V = 5.1GHz and 10V = 6.3GHz range 1200 max
-# 100MHz long range check: usable range 5.2 to 6.1 max and 5.2-5.3 is best 5.3 to 5.8 is good
 
 # important note: After changing R and C values of pll circuit freq ramp bw values are perfect.
 SWEEP_START         = 5.20e9 
@@ -59,11 +28,44 @@ USB_DATA_TYPE       = 1             # 0-> floating/2 x100 is sent ove usb, 1-> 1
 ADC_RESOLUTION      = 16
 PHASE_DISTANCE      = 380   # cm
 
+if ADC_SELECT == 0:
+    # 1ms sampling numbers are actual sampling khz freq.
+
+    if TEST_DEVICE == 0:
+        # Options: 518KHz(900), 618KHz(900), 778KHz(700), 933KHz(933smp),
+        # 1.050MHz(1050smp), 1.556MHz(1556smp), 2.8 MHz(2700smp)
+        SAMPLING_FREQUENCY = 1050000 # 58dbfs noise floor
+        #SAMPLING_FREQUENCY = 1550000  # 58dbfs noise floor
+        #SAMPLING_FREQUENCY = 2600000 # 70dbfs noise floor
+        NUMBER_OF_SAMPLES = int(SAMPLING_FREQUENCY * SWEEP_TIME) * 1  # NUMBER_OF_SAMPLES(16bit) = SAMPLING_FREQUENCY * SWEEP_TIME(int)
+
+    if TEST_DEVICE == 1:
+        # 16bit Options: 3.72MHz(3720), 3.38MHz(3380)
+        # 14bit Options: 4.14MHz(4140), 3.72MHz(3720)
+        # 12bit Options: 4.64MHz(4640), 4.14MHz(4140)
+        # Oversampling 2 works with highest rates for each bit options.
+        SAMPLE_AVERAGING = 2 #1, 2, 4, 8, 16
+        SAMPLING_FREQUENCY = int(3720000 / SAMPLE_AVERAGING) # oversampling 2 is enabled
+        NUMBER_OF_SAMPLES = int(SAMPLING_FREQUENCY * SWEEP_TIME) * 1  # NUMBER_OF_SAMPLES(16bit) = SAMPLING_FREQUENCY * SWEEP_TIME(int)
+
+    if TEST_DEVICE == 2:
+        SAMPLING_FREQUENCY = 500000
+        NUMBER_OF_SAMPLES = int(SAMPLING_FREQUENCY * SWEEP_TIME) * 1  # NUMBER_OF_SAMPLES(16bit) = SAMPLING_FREQUENCY * SWEEP_TIME(int)
+        BUFFER_LEN = 500*1
+else:
+    SAMPLING_FREQUENCY  = 400000
+    NUMBER_OF_SAMPLES   = 400  # NUMBER_OF_SAMPLE(16bit) = SAMPLING_FREQUENCY * SWEEP_TIME(int)
+
+# VCO range is 0V = 5.1GHz and 10V = 6.3GHz range 1200 max
+# 100MHz long range check: usable range 5.2 to 6.1 max and 5.2-5.3 is best 5.3 to 5.8 is good
+
 if DATA_LOG == 1:
-    SWEEP_GAP = 20 * 1.0e-6
-    SAMPLE_AVERAGING = 1 # overwrite it!!
+    SWEEP_GAP = 10 * 1.0e-6
+    
+    # overwrite these parameters for card log to card log
+    SAMPLE_AVERAGING = 1 
     SAMPLING_FREQUENCY = int(3720000 / SAMPLE_AVERAGING) 
-    NUMBER_OF_SAMPLES = int(SAMPLING_FREQUENCY / 1000) * 1
+    NUMBER_OF_SAMPLES = int(SAMPLING_FREQUENCY * SWEEP_TIME) * 1
 else:
     SWEEP_GAP = (2.0 * NUMBER_OF_SAMPLES) * 1.0e-6  # in sec max 4000
 

@@ -8,10 +8,8 @@ if OPERATING_SYSTEM == 1:
 elif OPERATING_SYSTEM == 2:
     BIN_FILE = r"C:\Users\CK\Desktop\flight_log.bin"
 
-INFO_SECTOR_SIZE = 512
-DISPLAY_STEP = 5            # animate every Nth chirp
-MAX_RANGE_TO_SHOW = 100     # meters
-AVG_CHIRPS = 64             # number of chirps for averaged FFT
+INFO_SECTOR_SIZE        = 512
+MAX_RANGE_DISPLAY       = 20 # range upper plot limit in meters 
 
 def read_u32_be(buf, offset):
     return ((buf[offset] << 24) |
@@ -23,8 +21,9 @@ def read_u16_be(buf, offset):
     return ((buf[offset] << 8) |
             (buf[offset + 1]))
 
+
 # -----------------------------
-# Read file once
+# Read the whole .bin file once first 512 byte is info, rest is data
 # -----------------------------
 with open(BIN_FILE, "rb") as f:
     file_bytes = f.read()
@@ -33,7 +32,6 @@ if len(file_bytes) < INFO_SECTOR_SIZE:
     raise ValueError("File is smaller than 512-byte info sector")
 
 info = file_bytes[:INFO_SECTOR_SIZE]
-raw_data = file_bytes[INFO_SECTOR_SIZE:]
 
 # -----------------------------
 # Decode info sector
@@ -67,6 +65,12 @@ CARD_WRITE_END_TIMER_US = read_u32_be(info, idx); idx += 4
 CHIRPS_PER_CPI          = read_u16_be(info, idx); idx += 2
 CPI_COUNTER             = read_u32_be(info, idx); idx += 4
 
+# This is the amount of byte logged
+NUM_OF_BYTES_LOGGED = int(CPI_COUNTER * CHIRPS_PER_CPI * SAMPLES_PER_CHIRP * (ADC_BITS / 8)) 
+
+# Instead of buffering 500 Megabyte whole .bin file, take amount of byte written.
+raw_data = file_bytes[INFO_SECTOR_SIZE: INFO_SECTOR_SIZE + NUM_OF_BYTES_LOGGED]
+
 # -----------------------------
 # Reconstruct user-friendly values
 # -----------------------------
@@ -88,11 +92,11 @@ if CHIRP_END_TIMER_US > 0:
     MEASURED_CHIRP_RATE_HZ = 1e6 / CHIRP_END_TIMER_US
 
 CPI_RATE_HZ = 0.0
-if CPI_END_TIMER_US > 0:
-    CPI_RATE_HZ = 1e6 / CPI_END_TIMER_US
+if (CPI_END_TIMER_US + CARD_WRITE_END_TIMER_US) > 0:
+    CPI_RATE_HZ = 1e6 / (CPI_END_TIMER_US + CARD_WRITE_END_TIMER_US)
 
 BYTES_PER_SAMPLE = 2 if USB_DATA_TYPE == 1 else 1
-BYTES_PER_CHIRP = SAMPLES_PER_CHIRP * BYTES_PER_SAMPLE
+BYTES_PER_CHIRP = SAMPLES_PER_CHIRP * BYTES_PER_SAMPLE 
 BYTES_PER_CPI = CHIRPS_PER_CPI * BYTES_PER_CHIRP
 
 CONFIGURED_DATA_RATE_MBPS = (BYTES_PER_CHIRP * CONFIGURED_PRF_HZ) / 1e6
@@ -121,6 +125,7 @@ print(f"MEASURED_CHIRP_RATE : {MEASURED_CHIRP_RATE_HZ:.2f} Hz")
 print("\n----- CPI -----")
 print(f"CHIRPS_PER_CPI      : {CHIRPS_PER_CPI}")
 print(f"CPI_RATE            : {CPI_RATE_HZ:.2f} Hz")
+print(f"CPI_COUNTER         : {CPI_COUNTER}")
 
 print("\n----- DATA -----")
 print(f"BYTES_PER_CHIRP     : {BYTES_PER_CHIRP}")
@@ -129,114 +134,89 @@ print(f"DATA_RATE           : {CONFIGURED_DATA_RATE_MBPS:.2f} MB/s")
 print("\n----- SD WRITE -----")
 print(f"WRITE_SPEED         : {CARD_WRITE_SPEED_MBPS:.2f} MB/s")
 
-# -----------------------------
-# Read ADC data
-# -----------------------------
-data = np.frombuffer(raw_data, dtype='<u2')
+# PROCESSING PART
+data_16bit = np.frombuffer(raw_data, dtype='<u2') # interpret raw_data as each 2 byte is a 16 bit sample
+data_16bit = data_16bit.astype(np.float32)
+data_16bit -= 32768.0 # remove bias float around 0v
 
-num_chirps = len(data) // SAMPLES_PER_CHIRP
-data = data[:num_chirps * SAMPLES_PER_CHIRP]
-chirps = data.reshape(num_chirps, SAMPLES_PER_CHIRP)
+num_chirps = CPI_COUNTER * CHIRPS_PER_CPI
 
-print("\n----- DATA -----")
-print("Total samples :", len(data))
-print("Num chirps    :", num_chirps)
-print("Samples/chirp :", SAMPLES_PER_CHIRP)
+# 16 bit record array is converted to number of chirps of whole record row with each row has adc samples as columns
+chirps = data_16bit.reshape(num_chirps, SAMPLES_PER_CHIRP) 
 
-# unsigned ADC -> centered signed-like float
-chirps = chirps.astype(np.float32) - 32768.0
 
-# -----------------------------
-# FFT precompute once
-# -----------------------------
-w = np.hanning(SAMPLES_PER_CHIRP)
-cg = np.sum(w) / SAMPLES_PER_CHIRP
-FS_PEAK = 2**(ADC_BITS - 1)
+# This part takes each cpi as a 2D array so 128 chirps x 930 sample on each row.
+# Then takes fft of this 2D array.
+# And creates sum over 2D array to create 1D array. 128 chirp is averaged and power is calculated. 
+# As a result peaks becomes higher noise reduced.
 
+# for range
 freq_hz = np.fft.rfftfreq(SAMPLES_PER_CHIRP, d=1.0 / FS)
-freq_khz = freq_hz / 1e3
+range_m = freq_hz / HZ_PER_M
 
-if HZ_PER_M > 0:
-    range_m = freq_hz / HZ_PER_M
-else:
-    range_m = np.arange(len(freq_hz), dtype=np.float32)
+# for waterfall
+waterfall = np.zeros((CPI_COUNTER, len(range_m)), dtype=np.float32)
 
-spectra = np.empty((num_chirps, len(freq_hz)), dtype=np.float32)
-
-for i in range(num_chirps):
-    x = chirps[i].copy()
-    x = x - np.mean(x)
-    xw = x * w
-    xw_fs = xw / FS_PEAK
-    X = np.fft.rfft(xw_fs)
-    mag_dbfs = 20 * np.log10((np.abs(X) / (SAMPLES_PER_CHIRP * cg / 2)) + 1e-20)
-    mag_dbfs[:5] = np.min(mag_dbfs)   # suppress DC / leakage bins
-    spectra[i] = mag_dbfs
-
-# -----------------------------
-# Averaged FFT
-# -----------------------------
-N_AVG = min(AVG_CHIRPS, num_chirps)
-avg_mag_dbfs = np.mean(spectra[:N_AVG], axis=0)
-
-print("\nTop peaks from averaged FFT:")
-peak_indices = np.argsort(avg_mag_dbfs)[-10:][::-1]
-for k in peak_indices:
-    print(f"bin={k:4d}  freq={freq_khz[k]:10.2f} kHz  range={range_m[k]:8.2f} m  mag={avg_mag_dbfs[k]:7.2f} dBFS")
-
-# -----------------------------
-# Animation first, finite only
-# -----------------------------
 plt.ion()
-fig_anim, ax_anim = plt.subplots(figsize=(10, 5))
-line, = ax_anim.plot(range_m, spectra[0])
-ax_anim.set_xlabel("Range (m)")
-ax_anim.set_ylabel("Magnitude (dBFS)")
-ax_anim.set_title("Range Profile - Chirp 0")
-ax_anim.grid(True)
-ax_anim.set_xlim(0, min(MAX_RANGE_TO_SHOW, np.max(range_m)))
+fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 8))
+fig.subplots_adjust(hspace=0.28)
 
-global_ymax = np.max(spectra)
-ax_anim.set_ylim(global_ymax - 80, global_ymax + 5)
-fig_anim.tight_layout()
-fig_anim.show()
+# Top → 1D range profile
+line, = ax1.plot([], [])
+ax1.set_xlabel("Range (m)")
+ax1.set_ylabel("Power")
+ax1.set_title("Range Profile (CPI)")
+ax1.grid(True)
 
-for i in range(0, num_chirps, DISPLAY_STEP):
-    line.set_ydata(spectra[i])
-    ax_anim.set_title(f"Range Profile - Chirp {i}")
-    fig_anim.canvas.draw_idle()
-    plt.pause(0.001)
+# Bottom → waterfall
+waterfall = np.zeros((CPI_COUNTER, len(range_m)), dtype=np.float32)
 
-# leave the last displayed chirp on screen and stop updating
-plt.ioff()
-
-# -----------------------------
-# Static plots
-# -----------------------------
-fig_avg, ax_avg = plt.subplots(figsize=(10, 5))
-ax_avg.plot(range_m, avg_mag_dbfs)
-ax_avg.set_xlabel("Range (m)")
-ax_avg.set_ylabel("Magnitude (dBFS)")
-ax_avg.set_title(f"Averaged FFT ({N_AVG} chirps)")
-ax_avg.grid(True)
-ymax = np.max(avg_mag_dbfs)
-ax_avg.set_ylim(ymax - 80, ymax + 5)
-ax_avg.set_xlim(0, min(MAX_RANGE_TO_SHOW, np.max(range_m)))
-fig_avg.tight_layout()
-
-fig_rt, ax_rt = plt.subplots(figsize=(10, 6))
-im = ax_rt.imshow(
-    spectra,
+img = ax2.imshow(
+    np.zeros_like(waterfall),
     aspect='auto',
     origin='lower',
-    extent=[range_m[0], range_m[-1], 0, num_chirps]
+    extent=[range_m[0], range_m[-1], 0, CPI_COUNTER]
 )
-ax_rt.set_xlabel("Range (m)")
-ax_rt.set_ylabel("Chirp index")
-ax_rt.set_title("Range-Time Intensity")
-ax_rt.set_xlim(0, min(MAX_RANGE_TO_SHOW, np.max(range_m)))
-fig_rt.colorbar(im, ax=ax_rt, label="dBFS")
-fig_rt.tight_layout()
+ax2.set_xlabel("Range (m)")
+ax2.set_ylabel("CPI index")
+ax2.set_title("Waterfall")
 
-# one final blocking show
+for cpi_idx in range(CPI_COUNTER):
+
+    # Extract one CPI
+    start = cpi_idx * CHIRPS_PER_CPI
+    end   = (cpi_idx + 1) * CHIRPS_PER_CPI
+
+    # 2d array of chirps of each cpi so 128 x 930 array
+    chirps_cpi = chirps[start:end]
+
+    # FFT over each chirp (fast-time) 
+    # 128 x 930 --FFT--> 128 x 446
+    chirps_fft = np.fft.rfft(chirps_cpi, axis=1)
+
+    # Non-coherent integration (power averaging)
+    avg_range = np.mean(np.abs(chirps_fft)**2, axis=0)
+
+    # add to waterfall
+    waterfall[cpi_idx, :] = avg_range
+
+    # --- update 1D plot ---
+    line.set_data(range_m, avg_range)
+    ax1.set_xlim(0, MAX_RANGE_DISPLAY)
+    ax1.set_ylim(np.min(avg_range), np.max(avg_range) * 1.1)
+    ax1.set_title(f"Range Profile - CPI {cpi_idx+1}/{CPI_COUNTER}")
+
+    # --- update waterfall ---
+    waterfall_db = 10 * np.log10(waterfall + 1e-12)
+    img.set_data(waterfall_db)
+
+    # update color scaling so contrast becomes visible
+    img.set_clim(np.max(waterfall_db) - 20, np.max(waterfall_db))
+    ax2.set_xlim(0, MAX_RANGE_DISPLAY)
+    ax2.set_ylim(0, CPI_COUNTER)
+
+    fig.canvas.draw_idle()
+    plt.pause(0.04)
+
+plt.ioff()
 plt.show()

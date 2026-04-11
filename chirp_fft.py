@@ -8,10 +8,10 @@ if OPERATING_SYSTEM == 1:
 elif OPERATING_SYSTEM == 2:
     BIN_FILE = r"C:\Users\CK\Desktop\flight_log.bin"
 
-INFO_SECTOR_SIZE = 512
-DISPLAY_STEP = 5            # animate every Nth chirp
-MAX_RANGE_TO_SHOW = 100     # meters
-AVG_CHIRPS = 64             # number of chirps for averaged FFT
+INFO_SECTOR_SIZE        = 512
+DISPLAY_STEP            = 16      # animate every Nth chirp
+MAX_RANGE_TO_SHOW       = 100     # meters
+AVG_CHIRPS              = 128     # number of chirps for averaged FFT. This is for dBFS calculation not plot related
 
 def read_u32_be(buf, offset):
     return ((buf[offset] << 24) |
@@ -24,7 +24,7 @@ def read_u16_be(buf, offset):
             (buf[offset + 1]))
 
 # -----------------------------
-# Read file once
+# Read the whole .bin file once first 512 byte is info, rest is data
 # -----------------------------
 with open(BIN_FILE, "rb") as f:
     file_bytes = f.read()
@@ -33,7 +33,6 @@ if len(file_bytes) < INFO_SECTOR_SIZE:
     raise ValueError("File is smaller than 512-byte info sector")
 
 info = file_bytes[:INFO_SECTOR_SIZE]
-raw_data = file_bytes[INFO_SECTOR_SIZE:]
 
 # -----------------------------
 # Decode info sector
@@ -67,6 +66,12 @@ CARD_WRITE_END_TIMER_US = read_u32_be(info, idx); idx += 4
 CHIRPS_PER_CPI          = read_u16_be(info, idx); idx += 2
 CPI_COUNTER             = read_u32_be(info, idx); idx += 4
 
+# This is the amount of byte logged
+NUM_OF_BYTES_LOGGED = int(CPI_COUNTER * CHIRPS_PER_CPI * SAMPLES_PER_CHIRP * (ADC_BITS / 8)) 
+
+# Instead of buffering 500 Megabyte whole .bin file, take amount of byte written.
+raw_data = file_bytes[INFO_SECTOR_SIZE: INFO_SECTOR_SIZE + NUM_OF_BYTES_LOGGED]
+
 # -----------------------------
 # Reconstruct user-friendly values
 # -----------------------------
@@ -88,11 +93,11 @@ if CHIRP_END_TIMER_US > 0:
     MEASURED_CHIRP_RATE_HZ = 1e6 / CHIRP_END_TIMER_US
 
 CPI_RATE_HZ = 0.0
-if CPI_END_TIMER_US > 0:
-    CPI_RATE_HZ = 1e6 / CPI_END_TIMER_US
+if (CPI_END_TIMER_US + CARD_WRITE_END_TIMER_US) > 0:
+    CPI_RATE_HZ = 1e6 / (CPI_END_TIMER_US + CARD_WRITE_END_TIMER_US)
 
 BYTES_PER_SAMPLE = 2 if USB_DATA_TYPE == 1 else 1
-BYTES_PER_CHIRP = SAMPLES_PER_CHIRP * BYTES_PER_SAMPLE
+BYTES_PER_CHIRP = SAMPLES_PER_CHIRP * BYTES_PER_SAMPLE 
 BYTES_PER_CPI = CHIRPS_PER_CPI * BYTES_PER_CHIRP
 
 CONFIGURED_DATA_RATE_MBPS = (BYTES_PER_CHIRP * CONFIGURED_PRF_HZ) / 1e6
@@ -121,6 +126,7 @@ print(f"MEASURED_CHIRP_RATE : {MEASURED_CHIRP_RATE_HZ:.2f} Hz")
 print("\n----- CPI -----")
 print(f"CHIRPS_PER_CPI      : {CHIRPS_PER_CPI}")
 print(f"CPI_RATE            : {CPI_RATE_HZ:.2f} Hz")
+print(f"CPI_COUNTER         : {CPI_COUNTER}")
 
 print("\n----- DATA -----")
 print(f"BYTES_PER_CHIRP     : {BYTES_PER_CHIRP}")
@@ -134,7 +140,7 @@ print(f"WRITE_SPEED         : {CARD_WRITE_SPEED_MBPS:.2f} MB/s")
 # -----------------------------
 data = np.frombuffer(raw_data, dtype='<u2')
 
-num_chirps = len(data) // SAMPLES_PER_CHIRP
+num_chirps = CPI_COUNTER * CHIRPS_PER_CPI
 data = data[:num_chirps * SAMPLES_PER_CHIRP]
 chirps = data.reshape(num_chirps, SAMPLES_PER_CHIRP)
 
@@ -208,35 +214,5 @@ for i in range(0, num_chirps, DISPLAY_STEP):
     plt.pause(0.001)
 
 # leave the last displayed chirp on screen and stop updating
-plt.ioff()
+#plt.ioff()
 
-# -----------------------------
-# Static plots
-# -----------------------------
-fig_avg, ax_avg = plt.subplots(figsize=(10, 5))
-ax_avg.plot(range_m, avg_mag_dbfs)
-ax_avg.set_xlabel("Range (m)")
-ax_avg.set_ylabel("Magnitude (dBFS)")
-ax_avg.set_title(f"Averaged FFT ({N_AVG} chirps)")
-ax_avg.grid(True)
-ymax = np.max(avg_mag_dbfs)
-ax_avg.set_ylim(ymax - 80, ymax + 5)
-ax_avg.set_xlim(0, min(MAX_RANGE_TO_SHOW, np.max(range_m)))
-fig_avg.tight_layout()
-
-fig_rt, ax_rt = plt.subplots(figsize=(10, 6))
-im = ax_rt.imshow(
-    spectra,
-    aspect='auto',
-    origin='lower',
-    extent=[range_m[0], range_m[-1], 0, num_chirps]
-)
-ax_rt.set_xlabel("Range (m)")
-ax_rt.set_ylabel("Chirp index")
-ax_rt.set_title("Range-Time Intensity")
-ax_rt.set_xlim(0, min(MAX_RANGE_TO_SHOW, np.max(range_m)))
-fig_rt.colorbar(im, ax=ax_rt, label="dBFS")
-fig_rt.tight_layout()
-
-# one final blocking show
-plt.show()
