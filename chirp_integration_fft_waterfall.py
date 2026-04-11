@@ -1,6 +1,11 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
+# This code takes whole 500 Megabyte .bin file
+
+
+
+
 OPERATING_SYSTEM = 1   # 1 = Ubuntu/Linux, 2 = Windows
 
 if OPERATING_SYSTEM == 1:
@@ -158,17 +163,17 @@ range_m = freq_hz / HZ_PER_M
 waterfall = np.zeros((CPI_COUNTER, len(range_m)), dtype=np.float32)
 
 plt.ion()
-fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 8))
-fig.subplots_adjust(hspace=0.28)
+fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(10, 10))
+fig.subplots_adjust(hspace=0.35)
 
-# Top → 1D range profile
+# 1 → Chirp integrated FFT Plot
 line, = ax1.plot([], [])
 ax1.set_xlabel("Range (m)")
 ax1.set_ylabel("Power")
 ax1.set_title("Range Profile (CPI)")
 ax1.grid(True)
 
-# Bottom → waterfall
+# 2 → Waterfall Plot
 waterfall = np.zeros((CPI_COUNTER, len(range_m)), dtype=np.float32)
 
 img = ax2.imshow(
@@ -180,6 +185,18 @@ img = ax2.imshow(
 ax2.set_xlabel("Range (m)")
 ax2.set_ylabel("CPI index")
 ax2.set_title("Waterfall")
+
+# 3 → Range-Doppler map Plot
+rd_map = np.zeros((CHIRPS_PER_CPI, len(range_m)), dtype=np.float32)
+
+img_rd = ax3.imshow(
+    np.zeros_like(rd_map),
+    aspect='auto',
+    origin='lower'
+)
+ax3.set_xlabel("Range bin")
+ax3.set_ylabel("Doppler bin")
+ax3.set_title("Range-Doppler")
 
 for cpi_idx in range(CPI_COUNTER):
 
@@ -194,11 +211,17 @@ for cpi_idx in range(CPI_COUNTER):
     # 128 x 930 --FFT--> 128 x 446
     chirps_fft = np.fft.rfft(chirps_cpi, axis=1)
 
+    # Take slow time FFT (on each column) over 2D fast time FFT result array
+    doppler_fft = np.fft.fft(chirps_fft, axis=0)
+    doppler_fft = np.fft.fftshift(doppler_fft, axes=0)  # shift doppler for + - velocities
+    rd_map = 20 * np.log10(np.abs(doppler_fft) + 1e-12)
+
     # Non-coherent integration (power averaging)
     avg_range = np.mean(np.abs(chirps_fft)**2, axis=0)
 
-    # add to waterfall
+    # Add to waterfall array
     waterfall[cpi_idx, :] = avg_range
+
 
     # --- update 1D plot ---
     line.set_data(range_m, avg_range)
@@ -214,6 +237,13 @@ for cpi_idx in range(CPI_COUNTER):
     img.set_clim(np.max(waterfall_db) - 20, np.max(waterfall_db))
     ax2.set_xlim(0, MAX_RANGE_DISPLAY)
     ax2.set_ylim(0, CPI_COUNTER)
+
+
+    # --- update range-doppler ---
+    img_rd.set_data(rd_map)
+    # dynamic scaling
+    img_rd.set_clim(np.max(rd_map) - 30, np.max(rd_map))
+    ax3.set_title(f"Range-Doppler (CPI {cpi_idx+1})")
 
     fig.canvas.draw_idle()
     plt.pause(0.04)
