@@ -2,9 +2,13 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 # This code takes whole 500 Megabyte .bin file
-
-
-
+# Takes recorded amount of bytes to an array to raw_data
+# After interpretting array as 16 bit 2 byte data is one sample
+# Creates chirps x samples array for record
+# 1. With a for loop creates 2D array for 128 chirps x adc samples and takes fft of this 2D array
+# 2. Sums these FFT of 128 chirp x samples array and creates 1D array and plots it. SNR improvement is remarkable!!
+# 3. Also adds this sum array to a waterfall array for plotting
+# 4. Creates range doppler map by taking FFT over columns of the array generated from FFT of 2D array for 128 chirps x adc samples
 
 OPERATING_SYSTEM = 1   # 1 = Ubuntu/Linux, 2 = Windows
 
