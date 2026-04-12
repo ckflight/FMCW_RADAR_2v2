@@ -13,12 +13,12 @@ import matplotlib.pyplot as plt
 OPERATING_SYSTEM = 1   # 1 = Ubuntu/Linux, 2 = Windows
 
 if OPERATING_SYSTEM == 1:
-    BIN_FILE = "/home/ck/Desktop/corridore_run.bin"
+    BIN_FILE = "/home/ck/Desktop/flight_log.bin"
 elif OPERATING_SYSTEM == 2:
     BIN_FILE = r"C:\Users\CK\Desktop\flight_log.bin"
 
 INFO_SECTOR_SIZE        = 512
-MAX_RANGE_DISPLAY       = 20 # range upper plot limit in meters 
+MAX_RANGE_DISPLAY       = 70 # range upper plot limit in meters 
 
 def read_u32_be(buf, offset):
     return ((buf[offset] << 24) |
@@ -124,6 +124,10 @@ print("\n----- SYSTEM -----")
 print(f"FS                  : {FS/1e6:.2f} MHz")
 print(f"SAMPLES_PER_CHIRP   : {SAMPLES_PER_CHIRP}")
 print(f"HZ_PER_M            : {HZ_PER_M}")
+print(f"TX_POWER            : {TX_POWER_DBM}")
+print(f"TX_VOLT             : {TX_POWER_DBM_VOLT}")
+print(f"SWEEP_START         : {SWEEP_START}")
+print(f"SWEEP_BW            : {SWEEP_BW}")
 
 print("\n----- TIMING -----")
 print(f"SWEEP_TIME          : {SWEEP_TIME_US} us")

@@ -10,7 +10,7 @@ elif OPERATING_SYSTEM == 2:
 
 INFO_SECTOR_SIZE        = 512
 DISPLAY_STEP            = 16      # animate every Nth chirp
-MAX_RANGE_TO_SHOW       = 100     # meters
+MAX_RANGE_TO_SHOW       = 1000     # meters
 AVG_CHIRPS              = 128     # number of chirps for averaged FFT. This is for dBFS calculation not plot related
 
 def read_u32_be(buf, offset):
