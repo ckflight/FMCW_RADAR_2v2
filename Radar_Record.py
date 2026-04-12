@@ -7,6 +7,7 @@ import numpy as np
 import time
 import os
 import binascii
+from datetime import datetime
 
 ADC_SELECT          = 0             # 0 for ADC DMA, 1 for External ADC MAX1426
 RECORD_TIME         = 10             # in sec
@@ -14,15 +15,15 @@ TEST_DEVICE         = 1             # 0 STM32F4, 1 STM32H7, 2 FPGA
 OPERATING_SYSTEM    = 1             # 0 MAC, 1 UBUNTU, 2 WINDOWS (Havent implemented serial on windows.)
 
 # important note: After changing R and C values of pll circuit freq ramp bw values are perfect.
-SWEEP_START         = 5.20e9 
-SWEEP_BW            = 1000e6
+SWEEP_START         = 5.50e9 
+SWEEP_BW            = 300e6
 TX_POWER_DBM        = 0
 SWEEP_TYPE          = 0             # 0 for Sawtooth, 1 for Triangular
 USE_PLL             = 1             # 0 for DAC, 1 for PLL
 TX_MODE             = 1             # 0 for continuous tx, 1 for on off with tx, 2 for testing when tx off
-GAIN                = 10            # 1 to 70 stmf4, 3 to 85 for H7
-DATA_LOG            = 1             # 0 for USB transfer, 1 for MicroCard Log
-SWEEP_TIME          = 250e-6        # 1.0e-3 # in sec, now less than 1ms is working as well
+GAIN                = 50            # 1 to 70 stmf4, 3 to 85 for H7
+DATA_LOG            = 0             # 0 for USB transfer, 1 for MicroCard Log
+SWEEP_TIME          = 1000e-6       # 1.0e-3 # in sec, now less than 1ms is working as well
 CHECK_MODE          = 0             # 0 ADC_DMA SAMPLING, 1 ADC_DMA USB, 2 MAX1426, 4 FPGA
 USB_DATA_TYPE       = 1             # 0-> floating/2 x100 is sent ove usb, 1-> 16bit data is sent
 ADC_RESOLUTION      = 16
@@ -81,6 +82,8 @@ if SWEEP_BW:
 
 SWEEP_FREQ          = 1 / (SWEEP_TIME + SWEEP_GAP)
 RECORD_COUNTER      = int(RECORD_TIME * SWEEP_FREQ)
+
+current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 def Serial_Init():
 
@@ -348,6 +351,8 @@ if DATA_LOG == 0:
     data_record_file.write(str(ADC_RESOLUTION))
     data_record_file.write("\r\n")
     data_record_file.write(str(PHASE_DISTANCE))
+    data_record_file.write("\r\n")
+    data_record_file.write(current_time)
     data_record_file.write("\r\n")
 
     start_time = time.time()
