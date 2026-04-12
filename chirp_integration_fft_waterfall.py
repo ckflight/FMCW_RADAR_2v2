@@ -13,7 +13,7 @@ import matplotlib.pyplot as plt
 OPERATING_SYSTEM = 1   # 1 = Ubuntu/Linux, 2 = Windows
 
 if OPERATING_SYSTEM == 1:
-    BIN_FILE = "/home/ck/Desktop/flight_log.bin"
+    BIN_FILE = "/home/ck/Desktop/corridore_run.bin"
 elif OPERATING_SYSTEM == 2:
     BIN_FILE = r"C:\Users\CK\Desktop\flight_log.bin"
 
@@ -216,12 +216,19 @@ for cpi_idx in range(CPI_COUNTER):
     chirps_fft = np.fft.rfft(chirps_cpi, axis=1)
 
     # Take slow time FFT (on each column) over 2D fast time FFT result array
-    doppler_fft = np.fft.fft(chirps_fft, axis=0)
+    doppler_fft = np.fft.fft(chirps_fft, axis=0) # doppler_fft 2D array has gain of 20log(128) = 42 dB
+
     doppler_fft = np.fft.fftshift(doppler_fft, axes=0)  # shift doppler for + - velocities
     rd_map = 20 * np.log10(np.abs(doppler_fft) + 1e-12)
 
     # Non-coherent integration (power averaging)
-    avg_range = np.mean(np.abs(chirps_fft)**2, axis=0)
+    # np.abs(chirps_fft) → amplitude of complex FFT  ---> |z| = sqrt(A² + B²)
+    # Power in signals is proportional to: Power ∝ amplitude² so |z|² is **2 → convert amplitude → power
+    # np.mean(..., axis=0) → average across 128 chirps#
+    avg_range = np.mean(np.abs(chirps_fft)**2, axis=0) # avg_range 1D array has gain of 10log(128) = 21 dB
+
+    #IMPORTANT NOTE: If i take the average of the doppler_fft as do to chirps_fft the gain again becomes 21 dB
+
 
     # Add to waterfall array
     waterfall[cpi_idx, :] = avg_range
