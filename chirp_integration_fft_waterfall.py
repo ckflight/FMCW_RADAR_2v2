@@ -13,12 +13,12 @@ import matplotlib.pyplot as plt
 OPERATING_SYSTEM = 1   # 1 = Ubuntu/Linux, 2 = Windows
 
 if OPERATING_SYSTEM == 1:
-    BIN_FILE = "/home/ck/Desktop/flight_log.bin"
+    BIN_FILE = "/home/ck/Desktop/corridore_run_no_att_patch.bin"
 elif OPERATING_SYSTEM == 2:
     BIN_FILE = r"C:\Users\CK\Desktop\flight_log.bin"
 
 INFO_SECTOR_SIZE        = 512
-MAX_RANGE_DISPLAY       = 70 # range upper plot limit in meters 
+MAX_RANGE_DISPLAY       = 20 # range upper plot limit in meters 
 
 def read_u32_be(buf, offset):
     return ((buf[offset] << 24) |
@@ -176,7 +176,7 @@ fig.subplots_adjust(hspace=0.35)
 
 # 1 → Chirp integrated FFT Plot
 line, = ax1.plot([], [])
-ax1.set_xlabel("Range (m)")
+ax1.set_xlabel("Range")
 ax1.set_ylabel("Power")
 ax1.set_title("Range Profile (CPI)")
 ax1.grid(True)
@@ -190,7 +190,7 @@ img = ax2.imshow(
     origin='lower',
     extent=[range_m[0], range_m[-1], 0, CPI_COUNTER]
 )
-ax2.set_xlabel("Range (m)")
+ax2.set_xlabel("Range")
 ax2.set_ylabel("CPI index")
 ax2.set_title("Waterfall")
 
@@ -225,6 +225,11 @@ for cpi_idx in range(CPI_COUNTER):
     doppler_fft = np.fft.fftshift(doppler_fft, axes=0)  # shift doppler for + - velocities
     rd_map = 20 * np.log10(np.abs(doppler_fft) + 1e-12)
 
+    range_mask = range_m <= MAX_RANGE_DISPLAY
+
+    range_m_limited = range_m[range_mask]
+    rd_map_limited = rd_map[:, range_mask]
+
     # Non-coherent integration (power averaging)
     # np.abs(chirps_fft) → amplitude of complex FFT  ---> |z| = sqrt(A² + B²)
     # Power in signals is proportional to: Power ∝ amplitude² so |z|² is **2 → convert amplitude → power
@@ -255,7 +260,7 @@ for cpi_idx in range(CPI_COUNTER):
 
 
     # --- update range-doppler ---
-    img_rd.set_data(rd_map)
+    img_rd.set_data(rd_map_limited)
     # dynamic scaling
     img_rd.set_clim(np.max(rd_map) - 30, np.max(rd_map))
     ax3.set_title(f"Range-Doppler (CPI {cpi_idx+1})")

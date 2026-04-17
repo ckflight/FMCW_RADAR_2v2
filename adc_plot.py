@@ -1,12 +1,12 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
-OPERATING_SYSTEM = 2   # 1 = Ubuntu/Linux, 2 = Windows
+OPERATING_SYSTEM = 1   # 1 = Ubuntu/Linux, 2 = Windows
 
 if OPERATING_SYSTEM == 1:
     BIN_FILE = "/home/ck/Desktop/flight_log.bin"
 elif OPERATING_SYSTEM == 2:
-    BIN_FILE = r"C:\Users\CK\Desktop\terrace1.bin"
+    BIN_FILE = r"C:\Users\CK\Desktop\flight_log.bin"
 
 INFO_SECTOR_SIZE        = 512
 MAX_RANGE_DISPLAY       = 70 # range upper plot limit in meters 
