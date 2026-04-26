@@ -10,21 +10,21 @@ import binascii
 from datetime import datetime
 
 ADC_SELECT          = 0             # 0 for ADC DMA, 1 for External ADC MAX1426
-RECORD_TIME         = 10             # in sec
-TEST_DEVICE         = 1             # 0 STM32F4, 1 STM32H7, 2 FPGA
+RECORD_TIME         = 10            # in sec
+TEST_DEVICE         = 2             # 0 STM32F4, 1 STM32H7, 2 FPGA
 OPERATING_SYSTEM    = 1             # 0 MAC, 1 UBUNTU, 2 WINDOWS (Havent implemented serial on windows.)
 
 # important note: After changing R and C values of pll circuit freq ramp bw values are perfect.
 # Notes: Current setup gives clean 50 MHz as well no noise at all on tune voltage ramp at 50 MHz (higher ramp is better any case)!!!
-SWEEP_START         = 5.60e9 
-SWEEP_BW            = 100e6
+SWEEP_START         = 5.30e9 
+SWEEP_BW            = 400e6
 TX_POWER_DBM        = 0
 SWEEP_TYPE          = 0             # 0 for Sawtooth, 1 for Triangular
 USE_PLL             = 1             # 0 for DAC, 1 for PLL
 TX_MODE             = 1             # 0 for continuous tx, 1 for on off with tx, 2 for testing when tx off
 GAIN                = 10            # 1 to 70 stmf4, 3 to 85 for H7
-DATA_LOG            = 1             # 0 for USB transfer, 1 for MicroCard Log
-SWEEP_TIME          = 250e-6        # 100 micro or 10 ms all working, sdcard log is designed for 128 chirp 250 micro for now
+DATA_LOG            = 0             # 0 for USB transfer, 1 for MicroCard Log
+SWEEP_TIME          = 1000e-6        # 100 micro or 10 ms all working, sdcard log is designed for 128 chirp 250 micro for now
 CPI_CHIRP           = 128           # 1 for USB, 32 for 1ms SWEEP_TIME, 64 for 500, 128 for 250 (max)
 CHECK_MODE          = 0             # 0 ADC_DMA SAMPLING, 1 ADC_DMA USB, 2 MAX1426, 4 FPGA
 USB_DATA_TYPE       = 1             # 0-> floating/2 x100 is sent ove usb, 1-> 16bit data is sent
@@ -52,9 +52,10 @@ if ADC_SELECT == 0:
         NUMBER_OF_SAMPLES = int(SAMPLING_FREQUENCY * SWEEP_TIME) * 1  # NUMBER_OF_SAMPLES(16bit) = SAMPLING_FREQUENCY * SWEEP_TIME(int)
 
     if TEST_DEVICE == 2:
-        SAMPLING_FREQUENCY = 500000
+        SAMPLE_AVERAGING = 1 
+        SAMPLING_FREQUENCY = 2000000 # 40 Msps with 20 decimation 2 Msps
         NUMBER_OF_SAMPLES = int(SAMPLING_FREQUENCY * SWEEP_TIME) * 1  # NUMBER_OF_SAMPLES(16bit) = SAMPLING_FREQUENCY * SWEEP_TIME(int)
-        BUFFER_LEN = 500*1
+        BUFFER_LEN = 4096
 else:
     SAMPLING_FREQUENCY  = 400000
     NUMBER_OF_SAMPLES   = 400  # NUMBER_OF_SAMPLE(16bit) = SAMPLING_FREQUENCY * SWEEP_TIME(int)
@@ -65,10 +66,11 @@ else:
 if DATA_LOG == 1:
     SWEEP_GAP = 10 * 1.0e-6
     
-    # overwrite these parameters for card log to card log
-    SAMPLE_AVERAGING = 1 
-    SAMPLING_FREQUENCY = int(3720000 / SAMPLE_AVERAGING) 
-    NUMBER_OF_SAMPLES = int(SAMPLING_FREQUENCY * SWEEP_TIME) * 1
+    if TEST_DEVICE != 2:
+        # overwrite these parameters for card log to card log
+        SAMPLE_AVERAGING = 1 
+        SAMPLING_FREQUENCY = int(3720000 / SAMPLE_AVERAGING) 
+        NUMBER_OF_SAMPLES = int(SAMPLING_FREQUENCY * SWEEP_TIME) * 1
 else:
     SWEEP_GAP = (2.0 * NUMBER_OF_SAMPLES) * 1.0e-6  # in sec max 4000
 
@@ -155,17 +157,58 @@ def Device_Init():
         print(device_)
 
     # Mode is binary b or text t, interface 1 = A, interface 2 = B
-    device = ftdi.Device(device_id="FT5US1H5", mode='b', interface_select=ftdi.INTERFACE_A)
+    device = ftdi.Device(device_id="FTBJ7TCT", mode='b', interface_select=ftdi.INTERFACE_A)
     device.open()
 
-    #device.ftdi_fn.ftdi_set_bitmode(0xff, 0x01)
     device.ftdi_fn.ftdi_read_data_set_chunksize(BUFFER_LEN)
     device.ftdi_fn.ftdi_write_data_set_chunksize(BUFFER_LEN)
-    #device.ftdi_fn.ftdi_setflowctrl(0x1 << 8)
+
+    # Latency optimization, enable once usb is working
+    #device.ftdi_fn.ftdi_set_latency_timer(1)
 
     device.flush()
 
     return device
+
+def Configuration_Process_FTDI(device):
+    device.write(b"==")
+
+    sw_t = np.uint16(SWEEP_TIME * 1e6)
+    device.write(binascii.hexlify(np.uint8((sw_t >> 8) & 0xFF)))
+    device.write(binascii.hexlify(np.uint8(sw_t & 0xFF)))
+
+    sw_g = np.uint16(SWEEP_GAP * 1e6)
+    device.write(binascii.hexlify(np.uint8((sw_g >> 8) & 0xFF)))
+    device.write(binascii.hexlify(np.uint8(sw_g & 0xFF)))
+
+    device.write(binascii.hexlify(np.uint8(RECORD_TIME)))
+
+    fs = np.uint16(SAMPLING_FREQUENCY / 1e3)
+    device.write(binascii.hexlify(np.uint8((fs >> 8) & 0xFF)))
+    device.write(binascii.hexlify(np.uint8(fs & 0xFF)))
+
+    num_sample = np.uint16(NUMBER_OF_SAMPLES)
+    device.write(binascii.hexlify(np.uint8((num_sample >> 8) & 0xFF)))
+    device.write(binascii.hexlify(np.uint8(num_sample & 0xFF)))
+
+    sweep_start = np.uint16(SWEEP_START / 1e7)
+    device.write(binascii.hexlify(np.uint8((sweep_start >> 8) & 0xFF)))
+    device.write(binascii.hexlify(np.uint8(sweep_start & 0xFF)))
+
+    sweep_bw = np.uint16(SWEEP_BW / 1e6)
+    device.write(binascii.hexlify(np.uint8((sweep_bw >> 8) & 0xFF)))
+    device.write(binascii.hexlify(np.uint8(sweep_bw & 0xFF)))
+
+    device.write(binascii.hexlify(np.uint8(TX_MODE)))
+    device.write(binascii.hexlify(np.uint8(GAIN)))
+    device.write(binascii.hexlify(np.uint8(SWEEP_TYPE)))
+    device.write(binascii.hexlify(np.uint8(DATA_LOG)))
+    device.write(binascii.hexlify(np.uint8(ADC_SELECT)))
+    device.write(binascii.hexlify(np.uint8(USE_PLL)))
+    device.write(binascii.hexlify(np.uint8(CHECK_MODE)))
+    device.write(binascii.hexlify(np.uint8(USB_DATA_TYPE)))
+    device.write(binascii.hexlify(np.uint8(ADC_RESOLUTION)))
+    device.write(binascii.hexlify(np.uint8(SAMPLE_AVERAGING)))
 
 def Configuration_Process():
 
@@ -299,17 +342,12 @@ elif TEST_DEVICE == 1:
     TX_POWER_DBM, TX_POWER_DBM_VOLTAGE = Configuration_Process()
 
 elif TEST_DEVICE == 2:
-    if OPERATING_SYSTEM == 0:
-        ser = Serial_Init_Specific("/dev/cu.usbmodem3158397630341")
-    elif OPERATING_SYSTEM == 1:
-        ser = Serial_Init_Specific("/dev/ttyACM0")
-    elif OPERATING_SYSTEM == 2:
-        ser = Serial_Init_Specific("COM41")
-
-    TX_POWER_DBM, TX_POWER_DBM_VOLTAGE = Configuration_Process()
-    ser.close()#!!!!!!!!!!!!!!!!!!!
-
     device = Device_Init()
+
+    TX_POWER_DBM = 0
+    TX_POWER_DBM_VOLTAGE = 0
+
+    Configuration_Process_FTDI(device)
 
 if DATA_LOG == 0:
 
