@@ -1,42 +1,28 @@
+import time
 import pylibftdi as ftdi
 
-# -------------------------------
-# FTDI INIT
-# -------------------------------
-def init_device():
-    devices = ftdi.Driver().list_devices()
-    for d in devices:
-        print(d)
+DEVICE_ID = "FTBJ7TCT"
+TEST_PACKET = b"==abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMN"
 
-    dev = ftdi.Device(
-        device_id="FTBJ7TCT",   # your FTDI serial
-        mode='b',
-        interface_select=ftdi.INTERFACE_A
-    )
-    dev.open()
+devices = ftdi.Driver().list_devices()
+print("Detected:")
+for d in devices:
+    print(d)
 
-    dev.ftdi_fn.ftdi_read_data_set_chunksize(4096)
-    dev.ftdi_fn.ftdi_write_data_set_chunksize(4096)
+dev = ftdi.Device(
+    device_id=DEVICE_ID,
+    mode="b",
+    interface_select=ftdi.INTERFACE_A
+)
 
-    dev.flush()
-    return dev
+dev.ftdi_fn.ftdi_read_data_set_chunksize(4096)
+dev.ftdi_fn.ftdi_write_data_set_chunksize(4096)
 
+dev.flush()
 
-# -------------------------------
-# TEST PACKET (42 BYTES)
-# -------------------------------
-def send_test(dev):
-    data = b"==abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMN"
+print("Packet length:", len(TEST_PACKET))
 
-    print("Sending:", data)
-    print("Length :", len(data))  # MUST be 42
-
-    dev.write(data)
-
-
-# -------------------------------
-# MAIN
-# -------------------------------
-if __name__ == "__main__":
-    dev = init_device()
-    send_test(dev)
+for i in range(5):
+    dev.write(TEST_PACKET)
+    print("sent", i)
+    time.sleep(0.1)
