@@ -158,11 +158,17 @@ def Device_Init():
 
     # Mode is binary b or text t, interface 1 = A, interface 2 = B
     device = ftdi.Device(device_id="FTBJ7TCT", mode='b', interface_select=ftdi.INTERFACE_A)
+    
     device.open()
+
+    # Put Channel A into FT245 synchronous FIFO mode
+    device.ftdi_fn.ftdi_set_bitmode(0xFF, 0x40)
+    time.sleep(0.1)
 
     device.ftdi_fn.ftdi_read_data_set_chunksize(BUFFER_LEN)
     device.ftdi_fn.ftdi_write_data_set_chunksize(BUFFER_LEN)
 
+    
     # Latency optimization, enable once usb is working
     #device.ftdi_fn.ftdi_set_latency_timer(1)
 
