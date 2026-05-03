@@ -7,7 +7,6 @@ SYNCFF = 0x40
 SIO_RTS_CTS_HS = (0x1 << 8)
 
 TEST_PACKET1 = "123456712345671234567123456712345671234567" # this one works
-TEST_PACKET2 = "987654321"
 
 dev = ftdi.Device(
     device_id=DEVICE_ID,
@@ -23,7 +22,6 @@ dev.ftdi_fn.ftdi_setflowctrl(SIO_RTS_CTS_HS)
 dev.flush()
 
 print("Packet1:", TEST_PACKET1)
-print("Packet2:", TEST_PACKET2)
 
 dev.write(TEST_PACKET1)
 
