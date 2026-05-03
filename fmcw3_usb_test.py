@@ -2,12 +2,12 @@ import time
 import pylibftdi as ftdi
 
 DEVICE_ID = "FTBJ7TCT"
-TEST_PACKET = b"1"
 
-devices = ftdi.Driver().list_devices()
-print("Detected:")
-for d in devices:
-    print(d)
+SYNCFF = 0x40
+SIO_RTS_CTS_HS = (0x1 << 8)
+
+TEST_PACKET1 = "123456712345671234567123456712345671234567" # this one works
+TEST_PACKET2 = "987654321"
 
 dev = ftdi.Device(
     device_id=DEVICE_ID,
@@ -15,21 +15,17 @@ dev = ftdi.Device(
     interface_select=ftdi.INTERFACE_A
 )
 
-# Put Channel A into FT245 synchronous FIFO mode
-dev.ftdi_fn.ftdi_set_bitmode(0xFF, 0x40)
-time.sleep(0.1)
-
-dev.ftdi_fn.ftdi_read_data_set_chunksize(1024)
-dev.ftdi_fn.ftdi_write_data_set_chunksize(1024)
-
+dev.open()
+dev.ftdi_fn.ftdi_set_bitmode(0xFF, SYNCFF)
+dev.ftdi_fn.ftdi_read_data_set_chunksize(0x10000)
+dev.ftdi_fn.ftdi_write_data_set_chunksize(0x10000)
+dev.ftdi_fn.ftdi_setflowctrl(SIO_RTS_CTS_HS)
 dev.flush()
 
-print("Packet length:", len(TEST_PACKET))
+print("Packet1:", TEST_PACKET1)
+print("Packet2:", TEST_PACKET2)
 
-for i in range(64):
-    dev.write(TEST_PACKET)
-    print("sent", i)
-    time.sleep(0.001)
+dev.write(TEST_PACKET1)
 
-#time.sleep(1.0)
+time.sleep(1.0)
 dev.close()
