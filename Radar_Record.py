@@ -16,14 +16,14 @@ OPERATING_SYSTEM    = 1             # 0 MAC, 1 UBUNTU, 2 WINDOWS (Havent impleme
 
 # important note: After changing R and C values of pll circuit freq ramp bw values are perfect.
 # Notes: Current setup gives clean 50 MHz as well no noise at all on tune voltage ramp at 50 MHz (higher ramp is better any case)!!!
-SWEEP_START         = 5.30e9 
-SWEEP_BW            = 400e6
+SWEEP_START         = 5.20e9 
+SWEEP_BW            = 1000e6
 TX_POWER_DBM        = 0
 SWEEP_TYPE          = 0             # 0 for Sawtooth, 1 for Triangular
 USE_PLL             = 1             # 0 for DAC, 1 for PLL
 TX_MODE             = 1             # 0 for continuous tx, 1 for on off with tx, 2 for testing when tx off
 GAIN                = 10            # 1 to 70 stmf4, 3 to 85 for H7
-DATA_LOG            = 0             # 0 for USB transfer, 1 for MicroCard Log
+DATA_LOG            = 1             # 0 for USB transfer, 1 for MicroCard Log
 SWEEP_TIME          = 1000e-6        # 100 micro or 10 ms all working, sdcard log is designed for 128 chirp 250 micro for now
 CPI_CHIRP           = 128           # 1 for USB, 32 for 1ms SWEEP_TIME, 64 for 500, 128 for 250 (max)
 CHECK_MODE          = 0             # 0 ADC_DMA SAMPLING, 1 ADC_DMA USB, 2 MAX1426, 4 FPGA
@@ -176,45 +176,56 @@ def Device_Init():
 
     return device
 
+
+def write_u8(device, name, value):
+    value = int(value) & 0xFF
+    print(f"{name:<18} 0x{value:02X}")
+    device.write(bytes([value]))
+
+def write_u16_be(device, name, value):
+    value = int(value) & 0xFFFF
+    msb = (value >> 8) & 0xFF
+    lsb = value & 0xFF
+    print(f"{name:<18} 0x{msb:02X} 0x{lsb:02X}   ({value})")
+    device.write(bytes([msb]))
+    device.write(bytes([lsb]))
+
 def Configuration_Process_FTDI(device):
+
+    print("TX CONFIG PACKET:")
+    print("HEADER             0x3D 0x3D")
     device.write(b"==")
 
     sw_t = np.uint16(SWEEP_TIME * 1e6)
-    device.write(binascii.hexlify(np.uint8((sw_t >> 8) & 0xFF)))
-    device.write(binascii.hexlify(np.uint8(sw_t & 0xFF)))
+    write_u16_be(device, "SWEEP_TIME", sw_t)
 
     sw_g = np.uint16(SWEEP_GAP * 1e6)
-    device.write(binascii.hexlify(np.uint8((sw_g >> 8) & 0xFF)))
-    device.write(binascii.hexlify(np.uint8(sw_g & 0xFF)))
+    write_u16_be(device, "SWEEP_GAP", sw_g)
 
-    device.write(binascii.hexlify(np.uint8(RECORD_TIME)))
+    write_u8(device, "RECORD_TIME", np.uint8(RECORD_TIME))
 
     fs = np.uint16(SAMPLING_FREQUENCY / 1e3)
-    device.write(binascii.hexlify(np.uint8((fs >> 8) & 0xFF)))
-    device.write(binascii.hexlify(np.uint8(fs & 0xFF)))
+    write_u16_be(device, "FS_KHZ", fs)
 
     num_sample = np.uint16(NUMBER_OF_SAMPLES)
-    device.write(binascii.hexlify(np.uint8((num_sample >> 8) & 0xFF)))
-    device.write(binascii.hexlify(np.uint8(num_sample & 0xFF)))
+    write_u16_be(device, "NUM_SAMPLES", num_sample)
 
     sweep_start = np.uint16(SWEEP_START / 1e7)
-    device.write(binascii.hexlify(np.uint8((sweep_start >> 8) & 0xFF)))
-    device.write(binascii.hexlify(np.uint8(sweep_start & 0xFF)))
+    write_u16_be(device, "SWEEP_START", sweep_start)
 
     sweep_bw = np.uint16(SWEEP_BW / 1e6)
-    device.write(binascii.hexlify(np.uint8((sweep_bw >> 8) & 0xFF)))
-    device.write(binascii.hexlify(np.uint8(sweep_bw & 0xFF)))
+    write_u16_be(device, "SWEEP_BW", sweep_bw)
 
-    device.write(binascii.hexlify(np.uint8(TX_MODE)))
-    device.write(binascii.hexlify(np.uint8(GAIN)))
-    device.write(binascii.hexlify(np.uint8(SWEEP_TYPE)))
-    device.write(binascii.hexlify(np.uint8(DATA_LOG)))
-    device.write(binascii.hexlify(np.uint8(ADC_SELECT)))
-    device.write(binascii.hexlify(np.uint8(USE_PLL)))
-    device.write(binascii.hexlify(np.uint8(CHECK_MODE)))
-    device.write(binascii.hexlify(np.uint8(USB_DATA_TYPE)))
-    device.write(binascii.hexlify(np.uint8(ADC_RESOLUTION)))
-    device.write(binascii.hexlify(np.uint8(SAMPLE_AVERAGING)))
+    write_u8(device, "TX_MODE", np.uint8(TX_MODE))
+    write_u8(device, "GAIN", np.uint8(GAIN))
+    write_u8(device, "SWEEP_TYPE", np.uint8(SWEEP_TYPE))
+    write_u8(device, "DATA_LOG", np.uint8(DATA_LOG))
+    write_u8(device, "ADC_SELECT", np.uint8(ADC_SELECT))
+    write_u8(device, "USE_PLL", np.uint8(USE_PLL))
+    write_u8(device, "CHECK_MODE", np.uint8(CHECK_MODE))
+    write_u8(device, "USB_DATA_TYPE", np.uint8(USB_DATA_TYPE))
+    write_u8(device, "ADC_RESOLUTION", np.uint8(ADC_RESOLUTION))
+    write_u8(device, "SAMPLE_AVERAGING", np.uint8(SAMPLE_AVERAGING))
 
 def Configuration_Process():
 
