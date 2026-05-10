@@ -7,11 +7,7 @@ TEST_BENCHMARK          = 0 # RX + TX is 6.8 MB/sec so it is 6.8 x 2 = 13.6 MB/s
 TEST_BENCHMARK_CHECK    = 0 # RX + TX is 6.8 MB/sec so it is 6.8 x 2 = 13.6 MB/sec
 
 # Select tx only process in top module of XC7A35T_FT2232H_Sycn
-# IMPORTANT NOTE: TX ONLY WORKS. Just after sometime data sync shifts so each 4096 etc read does not start 0x00 but if you follow
-# multiple read print it is seen that next 4096 reception starts with the incremented data!
-TEST_TX_ONLY            = 0 # 14.86 MB/sec
-TEST_TX_ONLY1           = 0 # prints received data simple to check 512 x 10 reception etc
-TEST_TX_ONLY2           = 1 # writes data to bin file then checks byte by byte to see if it is incrementing correctly
+TEST_TX_ONLY            = 0 # writes data to bin file then checks byte by byte to see if it is incrementing correctly 
 
 import time
 import pylibftdi as ftdi
@@ -73,46 +69,14 @@ if TEST_RX_ONLY == 1:
     time.sleep(1.0)
     dev.close()
 
-if TEST_TX_ONLY1 == 1:
-
-    START_COMMAND = b"1"
-
-    READ_SIZE = 1024
-    NUM_READS = 100
-
-    dev = open_ftdi()
-    drain_rx(dev)
-
-    # tell FPGA to start TX stream
-    dev.write(START_COMMAND)
-
-    print("Receiving TX stream...\n")
-
-    for read_idx in range(NUM_READS):
-
-        rx = dev.read(READ_SIZE)
-
-        if rx:
-
-            print(f"READ {read_idx}")
-            print("RX LEN:", len(rx))
-            print(rx.hex(" "))
-
-        else:
-
-            print(f"READ {read_idx} -> NO DATA")
-            time.sleep(0.001)
-
-    dev.close()
-
-if TEST_TX_ONLY2 == 1:
+if TEST_TX_ONLY == 1:
 
     START_COMMAND = b"1"
 
     TOTAL_READ_SIZE = 1024 * 125
     READ_SIZE = 4096
     NUM_READS = int(TOTAL_READ_SIZE / READ_SIZE)
-    NUM_OF_REPEAT  = 1000
+    NUM_OF_REPEAT  = 100
     OUTPUT_FILE = "tx_stream.bin"
 
     dev = open_ftdi()
