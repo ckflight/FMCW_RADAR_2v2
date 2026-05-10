@@ -180,20 +180,21 @@ if TEST_TX_ONLY4 == 1:
     TOTAL_READ_SIZE = 1024 * 125
     READ_SIZE = 4096
     NUM_READS = int(TOTAL_READ_SIZE / READ_SIZE)
-    NUM_OF_REPEAT  = 10
+    NUM_OF_REPEAT  = 1000
     OUTPUT_FILE = "tx_stream.bin"
 
     dev = open_ftdi()
     drain_rx(dev)
 
     dev.flush()
-
     for rp in range(NUM_OF_REPEAT):
         
         # start FPGA TX stream
         dev.write(START_COMMAND)
 
         print("Receiving data...\n")
+
+        t_start = time.perf_counter()
 
         with open(OUTPUT_FILE, "wb") as f:
 
@@ -213,13 +214,17 @@ if TEST_TX_ONLY4 == 1:
                         time.sleep(0.0001)
 
                 f.write(rx)
-
                 total_bytes += len(rx)
 
-                #print(f"READ {read_idx} | TOTAL BYTES = {total_bytes}")
+        t_end = time.perf_counter()
+
+        elapsed_s = t_end - t_start
+        throughput_MBps = total_bytes / elapsed_s / (1024 * 1024)
+
+        print(f"RX TIME     : {elapsed_s:.6f} s")
+        print(f"THROUGHPUT  : {throughput_MBps:.2f} MB/s")
 
         
-
         print("\nSaved:", OUTPUT_FILE)
 
         # ---------------------------------------------------
@@ -254,15 +259,18 @@ if TEST_TX_ONLY4 == 1:
 
             previous_byte = current_byte
 
-        print("\n----- SUMMARY -----")
-        print("TOTAL BYTES :", len(data))
-        print("ERRORS      :", errors)
+
 
         if errors == 0:
+            print("\n----- SUMMARY -----")
+            print("TOTAL BYTES :", len(data))
             print("RESULT      : STREAM OK")
+            print("ERRORS      :", errors)
+
             
         else:
-            print("RESULT      : STREAM HAS ERRORS")
+            print("RESULT      : STREAM HAS ERRORS***********************************************************")
+
         print("REPEAT COUNTER: ", rp)
 
     dev.close()
