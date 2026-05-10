@@ -7,7 +7,12 @@ TEST_BENCHMARK          = 0 # RX + TX is 6.8 MB/sec so it is 6.8 x 2 = 13.6 MB/s
 TEST_BENCHMARK_CHECK    = 0 # RX + TX is 6.8 MB/sec so it is 6.8 x 2 = 13.6 MB/sec
 
 # Select tx only process in top module of XC7A35T_FT2232H_Sycn
-TEST_TX_ONLY            = 1 # 14.86 MB/sec
+# IMPORTANT NOTE: TX ONLY WORKS. Just after sometime data sync shifts so each 4096 etc read does not start 0x00 but if you follow
+# multiple read print it is seen that next 4096 reception starts with the incremented data!
+TEST_TX_ONLY            = 0 # 14.86 MB/sec
+TEST_TX_ONLY2           = 0 # prints received data simple to check 512 x 10 reception etc
+TEST_TX_ONLY3           = 0 # prints received data and counts correctness
+TEST_TX_ONLY4           = 1 # writes data to bin file then checks byte by byte to see if it is incrementing correctly
 
 import time
 import pylibftdi as ftdi
@@ -45,7 +50,7 @@ def open_ftdi():
     dev.ftdi_fn.ftdi_set_bitmode(0xFF, SYNCFF)
     time.sleep(0.1)
 
-    dev.ftdi_fn.ftdi_set_latency_timer(1) # this is really important!!!!
+    dev.ftdi_fn.ftdi_set_latency_timer(10) # this is really important!!!!
     dev.ftdi_fn.ftdi_read_data_set_chunksize(0x10000)
     dev.ftdi_fn.ftdi_write_data_set_chunksize(0x10000)
     dev.ftdi_fn.ftdi_setflowctrl(SIO_RTS_CTS_HS)
@@ -69,125 +74,60 @@ if TEST_RX_ONLY == 1:
     time.sleep(1.0)
     dev.close()
 
+if TEST_TX_ONLY2 == 1:
 
-if TEST_ECHO == 1:
+    START_COMMAND = b"1"
 
-    TEST_PACKET = b"0123456789" * 1000
-    EXPECTED_LEN = len(TEST_PACKET)
+    READ_SIZE = 1024
+    NUM_READS = 100
 
     dev = open_ftdi()
+    drain_rx(dev)
 
-    stale = drain_rx(dev)
-    if stale:
-        print("Drained stale RX:", stale)
+    # tell FPGA to start TX stream
+    dev.write(START_COMMAND)
 
-    print("TX:", TEST_PACKET)
-    print("TX length:", EXPECTED_LEN)
+    print("Receiving TX stream...\n")
 
-    dev.write(TEST_PACKET)
+    for read_idx in range(NUM_READS):
 
-    rx = b""
-    timeout_s = 1.0
-    t0 = time.time()
+        rx = dev.read(READ_SIZE)
 
-    while len(rx) < EXPECTED_LEN and (time.time() - t0) < timeout_s:
-        chunk = dev.read(EXPECTED_LEN - len(rx))
-        if chunk:
-            rx += chunk
+        if rx:
+
+            print(f"READ {read_idx}")
+            print("RX LEN:", len(rx))
+            print(rx.hex(" "))
+
         else:
+
+            print(f"READ {read_idx} -> NO DATA")
             time.sleep(0.001)
 
     dev.close()
 
-    print("RX:", rx)
-    print("RX length:", len(rx))
+if TEST_TX_ONLY3 == 1:
 
-    if rx == TEST_PACKET:
-        print("ECHO OK")
-    else:
-        print("ECHO FAIL")
-        print("Expected:", TEST_PACKET)
-        print("Received:", rx)
-
-if TEST_BENCHMARK_CHECK == 1:
-
-    PACKET_SIZE = 8192 # 8192 fifo size and PACKET_SIZE 8192 works
-    NUM_PACKETS = 1000
-    TIMEOUT_S   = 10.0
-
-    test_packet = bytes([i & 0xFF for i in range(PACKET_SIZE)])
-
-    dev = open_ftdi()
-    drain_rx(dev)
-
-    total_rx = 0
-    error = None
-
-    t_start = time.perf_counter()
-
-    for packet_idx in range(NUM_PACKETS):
-
-        dev.write(test_packet)
-
-        rx = b""
-        t0 = time.perf_counter()
-
-        while len(rx) < PACKET_SIZE:
-
-            chunk = dev.read(PACKET_SIZE - len(rx))
-
-            if chunk:
-                rx += chunk
-            else:
-                if time.perf_counter() - t0 > TIMEOUT_S:
-                    error = f"TIMEOUT packet={packet_idx}, received={len(rx)}"
-                    break
-
-                time.sleep(0.0001)
-
-        if error:
-            break
-
-        if len(rx) != PACKET_SIZE:
-            error = f"LENGTH packet={packet_idx}, received={len(rx)}"
-            break
-
-        if rx != test_packet:
-            error = f"CORRUPT packet={packet_idx}"
-            break
-
-        total_rx += len(rx)
-
-    elapsed = time.perf_counter() - t_start
-    dev.close()
-
-    print("RX bytes:", total_rx)
-    print("Elapsed:", elapsed, "s")
-    print("Throughput:", total_rx / elapsed / 1_000_000, "MB/s")
-
-    if error is None:
-        print("RESULT: BYTE RECEIVE OK")
-    else:
-        print("RESULT:", error)
-
-if TEST_TX_ONLY == 1:
 
     START_COMMAND = b"1"
 
-    READ_SIZE = 4096
-    NUM_READS = 1000
-    TIMEOUT_S = 5.0
+    READ_SIZE = 256
+    NUM_READS = 100
+    TIMEOUT_S = 2.0
 
     dev = open_ftdi()
     drain_rx(dev)
 
+    # tell FPGA to start TX stream
     dev.write(START_COMMAND)
 
-    last_byte = None
-    total_rx = 0
-    error = None
+    print("Receiving TX stream...\n")
 
-    t_start = time.perf_counter()
+    correct_packets = 0
+    wrong_packets = 0
+    total_bytes = 0
+
+    expected_packet = bytes([i & 0xFF for i in range(READ_SIZE)])
 
     for read_idx in range(NUM_READS):
 
@@ -202,47 +142,127 @@ if TEST_TX_ONLY == 1:
                 rx += chunk
             else:
                 if time.perf_counter() - t0 > TIMEOUT_S:
-                    error = f"TIMEOUT read={read_idx}, received={len(rx)}"
+                    print(f"READ {read_idx} -> TIMEOUT, received {len(rx)} bytes")
                     break
 
                 time.sleep(0.0001)
 
-        if error:
-            break
+        if len(rx) == READ_SIZE:
 
-        if len(rx) != READ_SIZE:
-            error = f"LENGTH read={read_idx}, received={len(rx)}"
-            break
+            total_bytes += len(rx)
 
-        for b in rx:
+            if rx == expected_packet:
+                correct_packets += 1
+                result = "OK"
+            else:
+                wrong_packets += 1
+                result = "FAIL"
 
-            if last_byte is not None:
-                expected = (last_byte + 1) & 0xFF
+            print(f"READ {read_idx} | LEN={len(rx)} | PACKET={result}")
+            print(rx.hex(" "))
 
-                if b != expected:
-                    error = (
-                        f"CORRUPT read={read_idx}, "
-                        f"expected=0x{expected:02X}, got=0x{b:02X}"
-                    )
-                    break
+        else:
+            wrong_packets += 1
+            print(f"READ {read_idx} | LEN={len(rx)} | PACKET=INCOMPLETE")
+            print(rx.hex(" "))
 
-            last_byte = b
-
-        if error:
-            break
-
-        total_rx += len(rx)
-
-    elapsed = time.perf_counter() - t_start
     dev.close()
 
-    print("RX bytes:", total_rx)
-    print("Elapsed:", elapsed, "s")
+    print("\n----- SUMMARY -----")
+    print("Correct packets :", correct_packets)
+    print("Wrong packets   :", wrong_packets)
+    print("Total bytes     :", total_bytes)
 
-    if elapsed > 0:
-        print("Throughput:", total_rx / elapsed / 1_000_000, "MB/s")
+if TEST_TX_ONLY4 == 1:
 
-    if error is None:
-        print("RESULT: TX ONLY OK")
-    else:
-        print("RESULT:", error)
+    START_COMMAND = b"1"
+
+    TOTAL_READ_SIZE = 1024 * 125
+    READ_SIZE = 4096
+    NUM_READS = int(TOTAL_READ_SIZE / READ_SIZE)
+    NUM_OF_REPEAT  = 10
+    OUTPUT_FILE = "tx_stream.bin"
+
+    dev = open_ftdi()
+    drain_rx(dev)
+
+    dev.flush()
+
+    for rp in range(NUM_OF_REPEAT):
+        
+        # start FPGA TX stream
+        dev.write(START_COMMAND)
+
+        print("Receiving data...\n")
+
+        with open(OUTPUT_FILE, "wb") as f:
+
+            total_bytes = 0
+
+            for read_idx in range(NUM_READS):
+
+                rx = b""
+
+                while len(rx) < READ_SIZE:
+
+                    chunk = dev.read(READ_SIZE - len(rx))
+
+                    if chunk:
+                        rx += chunk
+                    else:
+                        time.sleep(0.0001)
+
+                f.write(rx)
+
+                total_bytes += len(rx)
+
+                #print(f"READ {read_idx} | TOTAL BYTES = {total_bytes}")
+
+        
+
+        print("\nSaved:", OUTPUT_FILE)
+
+        # ---------------------------------------------------
+        # VERIFY INCREMENT CONTINUITY
+        # ---------------------------------------------------
+
+        with open(OUTPUT_FILE, "rb") as f:
+
+            data = f.read()
+
+        print("Checking increment continuity...\n")
+
+        errors = 0
+
+        previous_byte = None
+
+        for i, current_byte in enumerate(data):
+
+            if previous_byte is not None:
+
+                expected = (previous_byte + 1) & 0xFF
+
+                if current_byte != expected:
+
+                    errors += 1
+
+                    print("\nERROR")
+                    print(f"BYTE INDEX : {i}")
+                    print(f"PREVIOUS   : 0x{previous_byte:02X}")
+                    print(f"EXPECTED   : 0x{expected:02X}")
+                    print(f"GOT        : 0x{current_byte:02X}")
+
+            previous_byte = current_byte
+
+        print("\n----- SUMMARY -----")
+        print("TOTAL BYTES :", len(data))
+        print("ERRORS      :", errors)
+
+        if errors == 0:
+            print("RESULT      : STREAM OK")
+            
+        else:
+            print("RESULT      : STREAM HAS ERRORS")
+        print("REPEAT COUNTER: ", rp)
+
+    dev.close()
