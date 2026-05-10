@@ -10,9 +10,8 @@ TEST_BENCHMARK_CHECK    = 0 # RX + TX is 6.8 MB/sec so it is 6.8 x 2 = 13.6 MB/s
 # IMPORTANT NOTE: TX ONLY WORKS. Just after sometime data sync shifts so each 4096 etc read does not start 0x00 but if you follow
 # multiple read print it is seen that next 4096 reception starts with the incremented data!
 TEST_TX_ONLY            = 0 # 14.86 MB/sec
-TEST_TX_ONLY2           = 0 # prints received data simple to check 512 x 10 reception etc
-TEST_TX_ONLY3           = 0 # prints received data and counts correctness
-TEST_TX_ONLY4           = 1 # writes data to bin file then checks byte by byte to see if it is incrementing correctly
+TEST_TX_ONLY1           = 0 # prints received data simple to check 512 x 10 reception etc
+TEST_TX_ONLY2           = 1 # writes data to bin file then checks byte by byte to see if it is incrementing correctly
 
 import time
 import pylibftdi as ftdi
@@ -74,7 +73,7 @@ if TEST_RX_ONLY == 1:
     time.sleep(1.0)
     dev.close()
 
-if TEST_TX_ONLY2 == 1:
+if TEST_TX_ONLY1 == 1:
 
     START_COMMAND = b"1"
 
@@ -106,74 +105,7 @@ if TEST_TX_ONLY2 == 1:
 
     dev.close()
 
-if TEST_TX_ONLY3 == 1:
-
-
-    START_COMMAND = b"1"
-
-    READ_SIZE = 256
-    NUM_READS = 100
-    TIMEOUT_S = 2.0
-
-    dev = open_ftdi()
-    drain_rx(dev)
-
-    # tell FPGA to start TX stream
-    dev.write(START_COMMAND)
-
-    print("Receiving TX stream...\n")
-
-    correct_packets = 0
-    wrong_packets = 0
-    total_bytes = 0
-
-    expected_packet = bytes([i & 0xFF for i in range(READ_SIZE)])
-
-    for read_idx in range(NUM_READS):
-
-        rx = b""
-        t0 = time.perf_counter()
-
-        while len(rx) < READ_SIZE:
-
-            chunk = dev.read(READ_SIZE - len(rx))
-
-            if chunk:
-                rx += chunk
-            else:
-                if time.perf_counter() - t0 > TIMEOUT_S:
-                    print(f"READ {read_idx} -> TIMEOUT, received {len(rx)} bytes")
-                    break
-
-                time.sleep(0.0001)
-
-        if len(rx) == READ_SIZE:
-
-            total_bytes += len(rx)
-
-            if rx == expected_packet:
-                correct_packets += 1
-                result = "OK"
-            else:
-                wrong_packets += 1
-                result = "FAIL"
-
-            print(f"READ {read_idx} | LEN={len(rx)} | PACKET={result}")
-            print(rx.hex(" "))
-
-        else:
-            wrong_packets += 1
-            print(f"READ {read_idx} | LEN={len(rx)} | PACKET=INCOMPLETE")
-            print(rx.hex(" "))
-
-    dev.close()
-
-    print("\n----- SUMMARY -----")
-    print("Correct packets :", correct_packets)
-    print("Wrong packets   :", wrong_packets)
-    print("Total bytes     :", total_bytes)
-
-if TEST_TX_ONLY4 == 1:
+if TEST_TX_ONLY2 == 1:
 
     START_COMMAND = b"1"
 
@@ -231,13 +163,34 @@ if TEST_TX_ONLY4 == 1:
         # VERIFY INCREMENT CONTINUITY
         # ---------------------------------------------------
 
+        errors = 0
+
         with open(OUTPUT_FILE, "rb") as f:
 
             data = f.read()
 
+            # ---------------------------------------------------
+            # CHECK START / END BYTE
+            # ---------------------------------------------------
+
+            if len(data) > 0:
+
+                first_byte = data[0]
+                last_byte  = data[-1]
+
+                print(f"FIRST BYTE : 0x{first_byte:02X}")
+                print(f"LAST BYTE  : 0x{last_byte:02X}")
+
+                if first_byte != 0x00:
+                    print("ERROR: STREAM DOES NOT START WITH 0x00***********************************************************")
+                    errors += 1
+
+                if last_byte != 0xFF:
+                    print("ERROR: STREAM DOES NOT END WITH 0xFF***********************************************************")
+                    errors += 1
+
         print("Checking increment continuity...\n")
 
-        errors = 0
 
         previous_byte = None
 
