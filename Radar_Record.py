@@ -71,8 +71,15 @@ if DATA_LOG == 1:
         SAMPLE_AVERAGING = 1 
         SAMPLING_FREQUENCY = int(3720000 / SAMPLE_AVERAGING) 
         NUMBER_OF_SAMPLES = int(SAMPLING_FREQUENCY * SWEEP_TIME) * 1
+
+    elif TEST_DEVICE == 2:
+        SWEEP_GAP = 1000e-6
+
 else:
     SWEEP_GAP = (2.0 * NUMBER_OF_SAMPLES) * 1.0e-6  # in sec max 4000
+
+    if TEST_DEVICE == 2:
+        SWEEP_GAP = 1000e-6
 
     #SWEEP_GAP = 4095 * 1.0e-6
     #if SWEEP_GAP >= 4095 * 1.0e-6:
