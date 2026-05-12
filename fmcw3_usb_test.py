@@ -7,7 +7,7 @@ TEST_BENCHMARK          = 0 # RX + TX is 6.8 MB/sec so it is 6.8 x 2 = 13.6 MB/s
 TEST_BENCHMARK_CHECK    = 0 # RX + TX is 6.8 MB/sec so it is 6.8 x 2 = 13.6 MB/sec
 
 # Select tx only process in top module of XC7A35T_FT2232H_Sycn
-TEST_TX_ONLY            = 0 # writes data to bin file then checks byte by byte to see if it is incrementing correctly 
+TEST_TX_ONLY            = 1 # writes data to bin file then checks byte by byte to see if it is incrementing correctly 
 
 import time
 import pylibftdi as ftdi

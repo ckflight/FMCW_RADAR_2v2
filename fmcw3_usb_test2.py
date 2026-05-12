@@ -27,14 +27,14 @@ def build_packet():
     # CONFIG VALUES
     # -------------------------
     SWEEP_TIME = 1000e-6
-    SWEEP_GAP = 10e-6
-    RECORD_TIME = 10
+    SWEEP_GAP = 1000e-6
+    RECORD_TIME = 20
 
     SAMPLING_FREQUENCY = 2_000_000
     NUMBER_OF_SAMPLES = int(SAMPLING_FREQUENCY * SWEEP_TIME)
 
-    SWEEP_START = 5.30e9
-    SWEEP_BW = 400e6
+    SWEEP_START = 5.40e9
+    SWEEP_BW = 800e6
 
     TX_MODE = 1
     GAIN = 10
