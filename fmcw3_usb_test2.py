@@ -21,8 +21,8 @@ WRITE_CHUNK_SIZE = 0x10000
 # CONFIG VALUES
 # =================================================
 
-SWEEP_TIME = 1000e-6
-SWEEP_GAP  = 1000e-6
+SWEEP_TIME = 250e-6
+SWEEP_GAP  = 50e-6
 
 RECORD_TIME = 10
 
@@ -30,7 +30,7 @@ SAMPLING_FREQUENCY = 2_000_000
 NUMBER_OF_SAMPLES  = int(SAMPLING_FREQUENCY * SWEEP_TIME)
 
 SWEEP_START = 5.20e9
-SWEEP_BW    = 1000e6
+SWEEP_BW    = 900e6
 
 TX_MODE          = 1
 GAIN             = 10
@@ -185,7 +185,7 @@ if TEST_RADAR == 1:
 
         while True:
 
-            rx = dev.read(512)
+            rx = dev.read(1024)
 
             if len(rx) > 0:
 
