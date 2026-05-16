@@ -19,12 +19,14 @@ WRITE_CHUNK_SIZE = 0x10000
 
 # =================================================
 # CONFIG VALUES
+
 # =================================================
 
+tx_start_char = b"C"
 SWEEP_TIME = 250e-6
-SWEEP_GAP  = 50e-6
+SWEEP_GAP  = 100e-6
 
-RECORD_TIME = 10
+RECORD_TIME = 5
 
 SAMPLING_FREQUENCY = 2_000_000
 NUMBER_OF_SAMPLES  = int(SAMPLING_FREQUENCY * SWEEP_TIME)
@@ -173,7 +175,7 @@ if TEST_RADAR == 1:
 
     print("SENDING C COMMAND...\n")
 
-    dev.write(b"C")
+    dev.write(tx_start_char)
 
     print("RECEIVING DATA...\n")
 
