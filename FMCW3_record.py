@@ -1,4 +1,5 @@
 import time
+import struct
 import pylibftdi as ftdi
 import numpy as np
 
@@ -13,12 +14,12 @@ SIO_RTS_CTS_HS = (0x1 << 8)
 READ_CHUNK_SIZE  = 0x10000
 WRITE_CHUNK_SIZE = 0x10000
 
-RX_IDLE_TIMEOUT = 2.0  # stop after 2 seconds with no RX data after RX starts
+RX_IDLE_TIMEOUT = 2.0
 
 tx_start_char = b"C"
 
-SWEEP_TIME = 1000e-6
-SWEEP_GAP  = 100e-6
+SWEEP_TIME = 200e-6
+SWEEP_GAP  = 20e-6
 
 RECORD_TIME = 5
 
@@ -35,9 +36,11 @@ DATA_LOG         = 0
 ADC_SELECT       = 0
 USE_PLL          = 1
 FIR_ENABLE       = 0
-SEND_DATA_TYPE   = 1
+SEND_DATA_TYPE   = 0
 ADC_RESOLUTION   = 16
 SAMPLE_AVERAGING = 1
+
+INFO_SECTOR_SIZE = 512
 
 
 def open_ftdi():
@@ -116,6 +119,62 @@ def build_packet():
     return bytes(packet)
 
 
+def build_info_sector():
+
+    info = bytearray(INFO_SECTOR_SIZE)
+
+    offset = 0
+
+    def put_u32(value):
+        nonlocal offset
+        struct.pack_into("<I", info, offset, int(value))
+        offset += 4
+
+    def put_f32(value):
+        nonlocal offset
+        struct.pack_into("<f", info, offset, float(value))
+        offset += 4
+
+    hz_per_m = (2.0 * SWEEP_BW) / (3.0e8 * SWEEP_TIME)
+
+    # 0-3: file magic
+    info[0:4] = b"FMCW"
+    offset = 4
+
+    # 4-7: binary format version
+    put_u32(1)
+
+    # Radar config
+    put_f32(SWEEP_TIME)
+    put_f32(SWEEP_GAP)
+    put_u32(RECORD_TIME)
+
+    put_u32(SAMPLING_FREQUENCY)
+    put_u32(NUMBER_OF_SAMPLES)
+
+    put_f32(SWEEP_START)
+    put_f32(SWEEP_BW)
+
+    put_u32(TX_MODE)
+    put_u32(GAIN)
+    put_u32(SWEEP_TYPE)
+    put_u32(DATA_LOG)
+    put_u32(ADC_SELECT)
+    put_u32(USE_PLL)
+    put_u32(FIR_ENABLE)
+    put_u32(SEND_DATA_TYPE)
+    put_u32(ADC_RESOLUTION)
+    put_u32(SAMPLE_AVERAGING)
+
+    put_f32(hz_per_m)
+
+    # File layout info
+    put_u32(INFO_SECTOR_SIZE)
+    put_u32(INFO_SECTOR_SIZE)
+
+    return bytes(info)
+
+
 if TEST_CONFIG_ONLY == 1:
 
     dev = open_ftdi()
@@ -159,6 +218,10 @@ if TEST_RADAR == 1:
 
     f = open("record.bin", "wb")
 
+    # Write 512-byte binary info sector first
+    f.write(build_info_sector())
+    f.flush()
+
     start_time = time.time()
     last_rx_time = None
     received_started = False
@@ -178,15 +241,16 @@ if TEST_RADAR == 1:
                 f.write(rx)
 
                 elapsed = now - start_time
+                data_bytes = f.tell() - INFO_SECTOR_SIZE
 
                 if elapsed > 0:
-                    throughput = (f.tell() / elapsed) / (1024 * 1024)
+                    throughput = (data_bytes / elapsed) / (1024 * 1024)
                 else:
                     throughput = 0.0
 
                 print(
                     f"RX {len(rx):6d} bytes   "
-                    f"TOTAL {f.tell():10d} bytes   "
+                    f"DATA {data_bytes:10d} bytes   "
                     f"{throughput:6.2f} MB/s"
                 )
 
@@ -207,9 +271,11 @@ if TEST_RADAR == 1:
         print("\nSTOPPED BY USER")
 
     total_bytes = f.tell()
+    data_bytes = total_bytes - INFO_SECTOR_SIZE
 
     f.close()
     dev.close()
 
     print("\nSAVED: record.bin")
     print("TOTAL BYTES:", total_bytes)
+    print("DATA BYTES :", data_bytes)

@@ -1,5 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
+import struct
 
 PLOT_ADC       = 1
 PLOT_TEST_DATA = 0
@@ -7,33 +8,136 @@ PLOT_TEST_DATA = 0
 FILENAME = "record.bin"
 HEADER = b"\xC8\xC8\xC8\xC8"
 
-SAMPLES_PER_CHIRP = 1000
+INFO_SECTOR_SIZE = 512
+
 START_CHIRP = 0
 END_CHIRP   = None
 CHIRP_STEP  = 1
 FRAME_DELAY = 0.001
 
 ADC_BITS = 12
-ADC_FULL_SCALE_VOLTAGE = 3.3
+ADC_FULL_SCALE_VOLTAGE = 3.0
 
 BYTES_PER_SAMPLE_PAIR = 4
-BYTES_PER_CHIRP = SAMPLES_PER_CHIRP * BYTES_PER_SAMPLE_PAIR
+
+def print_info(info):
+    print("\nINFO SECTOR")
+    print("-----------")
+
+    readable = {
+        "VERSION":              info["VERSION"],
+        "SWEEP_TIME":           f"{info['SWEEP_TIME'] * 1e6:.0f} us",
+        "SWEEP_GAP":            f"{info['SWEEP_GAP'] * 1e6:.0f} us",
+        "RECORD_TIME":          f"{info['RECORD_TIME']} s",
+        "SAMPLING_FREQUENCY":   f"{info['SAMPLING_FREQUENCY'] / 1e6:.3f} MHz",
+        "NUMBER_OF_SAMPLES":    info["NUMBER_OF_SAMPLES"],
+        "SWEEP_START":          f"{info['SWEEP_START'] / 1e6:.0f} MHz",
+        "SWEEP_BW":             f"{info['SWEEP_BW'] / 1e6:.0f} MHz",
+        "TX_MODE":              info["TX_MODE"],
+        "GAIN":                 f"{info['GAIN']} dB",
+        "SWEEP_TYPE":           info["SWEEP_TYPE"],
+        "DATA_LOG":             info["DATA_LOG"],
+        "ADC_SELECT":           info["ADC_SELECT"],
+        "USE_PLL":              info["USE_PLL"],
+        "FIR_ENABLE":           info["FIR_ENABLE"],
+        "SEND_DATA_TYPE":       info["SEND_DATA_TYPE"],
+        "ADC_RESOLUTION":       f"{info['ADC_RESOLUTION']} bit",
+        "SAMPLE_AVERAGING":     info["SAMPLE_AVERAGING"],
+        "HZ_PER_M":             f"{info['HZ_PER_M']:.1f} Hz/m",
+        "INFO_SECTOR_SIZE":     f"{info['INFO_SECTOR_SIZE']} bytes",
+        "DATA_START_BYTE":      info["DATA_START_BYTE"],
+    }
+
+    for k, v in readable.items():
+        print(f"{k:<22}: {v}")
+
+def parse_info_sector(info):
+
+    if info[0:4] != b"FMCW":
+        raise RuntimeError("Invalid info sector magic. Expected FMCW.")
+
+    offset = 4
+
+    def get_u32():
+        nonlocal offset
+        value = struct.unpack_from("<I", info, offset)[0]
+        offset += 4
+        return value
+
+    def get_f32():
+        nonlocal offset
+        value = struct.unpack_from("<f", info, offset)[0]
+        offset += 4
+        return value
+
+    parsed = {}
+
+    parsed["VERSION"] = get_u32()
+
+    parsed["SWEEP_TIME"] = get_f32()
+    parsed["SWEEP_GAP"] = get_f32()
+    parsed["RECORD_TIME"] = get_u32()
+
+    parsed["SAMPLING_FREQUENCY"] = get_u32()
+    parsed["NUMBER_OF_SAMPLES"] = get_u32()
+
+    parsed["SWEEP_START"] = get_f32()
+    parsed["SWEEP_BW"] = get_f32()
+
+    parsed["TX_MODE"] = get_u32()
+    parsed["GAIN"] = get_u32()
+    parsed["SWEEP_TYPE"] = get_u32()
+    parsed["DATA_LOG"] = get_u32()
+    parsed["ADC_SELECT"] = get_u32()
+    parsed["USE_PLL"] = get_u32()
+    parsed["FIR_ENABLE"] = get_u32()
+    parsed["SEND_DATA_TYPE"] = get_u32()
+    parsed["ADC_RESOLUTION"] = get_u32()
+    parsed["SAMPLE_AVERAGING"] = get_u32()
+
+    parsed["HZ_PER_M"] = get_f32()
+
+    parsed["INFO_SECTOR_SIZE"] = get_u32()
+    parsed["DATA_START_BYTE"] = get_u32()
+
+    return parsed
+
 
 with open(FILENAME, "rb") as f:
     raw_all = f.read()
+
+info_raw = raw_all[:INFO_SECTOR_SIZE]
+raw_data = raw_all[INFO_SECTOR_SIZE:]
+
+info = parse_info_sector(info_raw)
+
+print_info(info)
+
+SAMPLES_PER_CHIRP = int(info["NUMBER_OF_SAMPLES"])
+ADC_BITS = int(info["ADC_RESOLUTION"])
+
+BYTES_PER_CHIRP = SAMPLES_PER_CHIRP * BYTES_PER_SAMPLE_PAIR
+
+print("\nDERIVED")
+print("-------")
+print("SAMPLES_PER_CHIRP   :", SAMPLES_PER_CHIRP)
+print("BYTES_PER_CHIRP     :", BYTES_PER_CHIRP)
+print("ADC_BITS            :", ADC_BITS)
+print("RAW FILE BYTES      :", len(raw_all))
+print("RAW DATA BYTES      :", len(raw_data))
 
 header_positions = []
 idx = 0
 
 while True:
-    idx = raw_all.find(HEADER, idx)
+    idx = raw_data.find(HEADER, idx)
     if idx < 0:
         break
+
     header_positions.append(idx)
     idx += len(HEADER)
 
-print("RAW BYTES     :", len(raw_all))
-print("HEADERS FOUND :", len(header_positions))
+print("\nHEADERS FOUND       :", len(header_positions))
 
 if len(header_positions) == 0:
     raise RuntimeError("No header found")
@@ -44,13 +148,14 @@ for h_idx in header_positions:
     start = h_idx + len(HEADER)
     end   = start + BYTES_PER_CHIRP
 
-    if end <= len(raw_all):
-        chirp_payloads.append(raw_all[start:end])
+    if end <= len(raw_data):
+        chirp_payloads.append(raw_data[start:end])
 
-print("VALID CHIRPS  :", len(chirp_payloads))
+print("VALID CHIRPS        :", len(chirp_payloads))
 
 if len(chirp_payloads) == 0:
     raise RuntimeError("No complete chirp found after headers")
+
 
 if PLOT_TEST_DATA == 1:
 
@@ -63,8 +168,8 @@ if PLOT_TEST_DATA == 1:
     chirps = np.array(chirps)
     num_chirps = chirps.shape[0]
 
-    print("NUM CHIRPS  :", num_chirps)
-    print("WORDS/CHIRP :", chirps.shape[1])
+    print("NUM CHIRPS          :", num_chirps)
+    print("WORDS/CHIRP         :", chirps.shape[1])
 
     if END_CHIRP is None:
         END_CHIRP = num_chirps
@@ -90,6 +195,7 @@ if PLOT_TEST_DATA == 1:
 
     plt.ioff()
     plt.show()
+
 
 if PLOT_ADC == 1:
 
@@ -121,8 +227,8 @@ if PLOT_ADC == 1:
 
     num_chirps = adc_a_chirps.shape[0]
 
-    print("NUM CHIRPS :", num_chirps)
-    print("SAMPLES/CH :", adc_a_chirps.shape[1])
+    print("NUM CHIRPS          :", num_chirps)
+    print("SAMPLES/CH          :", adc_a_chirps.shape[1])
 
     if END_CHIRP is None:
         END_CHIRP = num_chirps
