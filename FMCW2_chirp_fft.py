@@ -9,7 +9,7 @@ elif OPERATING_SYSTEM == 2:
     BIN_FILE = r"C:\Users\CK\Desktop\flight_log.bin"
 
 INFO_SECTOR_SIZE        = 512
-DISPLAY_STEP            = 2      # animate every Nth chirp
+DISPLAY_STEP            = 8       # animate every Nth chirp
 MAX_RANGE_TO_SHOW       = 100     # meters
 AVG_CHIRPS              = 128     # number of chirps for averaged FFT. This is for dBFS calculation not plot related
 

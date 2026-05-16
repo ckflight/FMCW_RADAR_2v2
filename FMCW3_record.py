@@ -24,7 +24,7 @@ WRITE_CHUNK_SIZE = 0x10000
 
 tx_start_char = b"C"
 SWEEP_TIME = 250e-6
-SWEEP_GAP  = 100e-6
+SWEEP_GAP  = 10e-6 # min 60-80 micro or so is needed for ft2232h fmcw3 usb mode
 
 RECORD_TIME = 5
 
@@ -40,8 +40,8 @@ SWEEP_TYPE       = 0
 DATA_LOG         = 0
 ADC_SELECT       = 0
 USE_PLL          = 1
-CHECK_MODE       = 4
-USB_DATA_TYPE    = 1
+FIR_ENABLE       = 0 # 1 enable fir, 0 nofir
+SEND_DATA_TYPE   = 0 # 1 for adc, 0 for test data
 ADC_RESOLUTION   = 16
 SAMPLE_AVERAGING = 1
 
@@ -124,8 +124,8 @@ def build_packet():
     push_u8("DATA_LOG", DATA_LOG)
     push_u8("ADC_SELECT", ADC_SELECT)
     push_u8("USE_PLL", USE_PLL)
-    push_u8("CHECK_MODE", CHECK_MODE)
-    push_u8("USB_DATA_TYPE", USB_DATA_TYPE)
+    push_u8("CHECK_MODE", FIR_ENABLE)
+    push_u8("USB_DATA_TYPE", SEND_DATA_TYPE)
     push_u8("ADC_RESOLUTION", ADC_RESOLUTION)
     push_u8("SAMPLE_AVERAGING", SAMPLE_AVERAGING)
 
