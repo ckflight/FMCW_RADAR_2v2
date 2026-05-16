@@ -5,10 +5,6 @@ import numpy as np
 TEST_CONFIG_ONLY = 0
 TEST_RADAR       = 1
 
-# =================================================
-# COMMON FTDI DEFINITIONS
-# =================================================
-
 DEVICE_ID = "FTBJ7TCT"
 
 SYNCFF = 0x40
@@ -17,22 +13,20 @@ SIO_RTS_CTS_HS = (0x1 << 8)
 READ_CHUNK_SIZE  = 0x10000
 WRITE_CHUNK_SIZE = 0x10000
 
-# =================================================
-# CONFIG VALUES
-
-# =================================================
+RX_IDLE_TIMEOUT = 2.0  # stop after 2 seconds with no RX data after RX starts
 
 tx_start_char = b"C"
+
 SWEEP_TIME = 1000e-6
-SWEEP_GAP  = 10e-6 # min 60-80 micro or so is needed for ft2232h fmcw3 usb mode
+SWEEP_GAP  = 100e-6
 
 RECORD_TIME = 5
 
 SAMPLING_FREQUENCY = 2_000_000
 NUMBER_OF_SAMPLES  = int(SAMPLING_FREQUENCY * SWEEP_TIME)
 
-SWEEP_START = 5.30e9
-SWEEP_BW    = 800e6
+SWEEP_START = 5.20e9
+SWEEP_BW    = 1000e6
 
 TX_MODE          = 1
 GAIN             = 10
@@ -40,14 +34,11 @@ SWEEP_TYPE       = 0
 DATA_LOG         = 0
 ADC_SELECT       = 0
 USE_PLL          = 1
-FIR_ENABLE       = 0 # 1 enable fir, 0 nofir
-SEND_DATA_TYPE   = 1 # 1 for adc, 0 for test data
+FIR_ENABLE       = 0
+SEND_DATA_TYPE   = 1
 ADC_RESOLUTION   = 16
 SAMPLE_AVERAGING = 1
 
-# =================================================
-# FTDI INIT
-# =================================================
 
 def open_ftdi():
 
@@ -74,24 +65,17 @@ def open_ftdi():
 
     return dev
 
-# =================================================
-# CONFIG PACKET
-# =================================================
 
 def build_packet():
 
     packet = bytearray()
 
     def push_u8(name, value):
-
         value = int(value) & 0xFF
-
         print(f"{name:<18} 0x{value:02X}")
-
         packet.append(value)
 
     def push_u16(name, value):
-
         value = int(value) & 0xFFFF
 
         msb = (value >> 8) & 0xFF
@@ -131,9 +115,6 @@ def build_packet():
 
     return bytes(packet)
 
-# =================================================
-# TEST CONFIG ONLY
-# =================================================
 
 if TEST_CONFIG_ONLY == 1:
 
@@ -154,9 +135,6 @@ if TEST_CONFIG_ONLY == 1:
 
     print("DONE")
 
-# =================================================
-# TEST RADAR
-# =================================================
 
 if TEST_RADAR == 1:
 
@@ -182,20 +160,29 @@ if TEST_RADAR == 1:
     f = open("record.bin", "wb")
 
     start_time = time.time()
+    last_rx_time = None
+    received_started = False
 
     try:
 
         while True:
 
             rx = dev.read(1024)
+            now = time.time()
 
             if len(rx) > 0:
 
+                received_started = True
+                last_rx_time = now
+
                 f.write(rx)
 
-                elapsed = time.time() - start_time
+                elapsed = now - start_time
 
-                throughput = (f.tell() / elapsed) / (1024 * 1024)
+                if elapsed > 0:
+                    throughput = (f.tell() / elapsed) / (1024 * 1024)
+                else:
+                    throughput = 0.0
 
                 print(
                     f"RX {len(rx):6d} bytes   "
@@ -203,12 +190,26 @@ if TEST_RADAR == 1:
                     f"{throughput:6.2f} MB/s"
                 )
 
+            else:
+
+                if received_started and last_rx_time is not None:
+                    if now - last_rx_time >= RX_IDLE_TIMEOUT:
+                        print(
+                            f"\nRX idle for {RX_IDLE_TIMEOUT:.1f} s. "
+                            "Ending reception."
+                        )
+                        break
+
+                time.sleep(0.001)
+
     except KeyboardInterrupt:
 
-        print("\nSTOPPED")
+        print("\nSTOPPED BY USER")
+
+    total_bytes = f.tell()
 
     f.close()
-
     dev.close()
 
     print("\nSAVED: record.bin")
+    print("TOTAL BYTES:", total_bytes)
