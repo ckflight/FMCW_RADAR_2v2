@@ -12,7 +12,7 @@ INFO_SECTOR_SIZE = 512
 
 START_CHIRP = 0
 END_CHIRP   = None
-CHIRP_STEP  = 1
+CHIRP_STEP  = 10
 FRAME_DELAY = 0.001
 
 ADC_BITS = 12
@@ -38,7 +38,7 @@ def print_info(info):
         "SWEEP_TYPE":           info["SWEEP_TYPE"],
         "DATA_LOG":             info["DATA_LOG"],
         "ADC_SELECT":           info["ADC_SELECT"],
-        "USE_PLL":              info["USE_PLL"],
+        "PA_MODE":              info["PA_MODE"],
         "FIR_ENABLE":           info["FIR_ENABLE"],
         "SEND_DATA_TYPE":       info["SEND_DATA_TYPE"],
         "ADC_RESOLUTION":       f"{info['ADC_RESOLUTION']} bit",
@@ -89,7 +89,7 @@ def parse_info_sector(info):
     parsed["SWEEP_TYPE"] = get_u32()
     parsed["DATA_LOG"] = get_u32()
     parsed["ADC_SELECT"] = get_u32()
-    parsed["USE_PLL"] = get_u32()
+    parsed["PA_MODE"] = get_u32()
     parsed["FIR_ENABLE"] = get_u32()
     parsed["SEND_DATA_TYPE"] = get_u32()
     parsed["ADC_RESOLUTION"] = get_u32()

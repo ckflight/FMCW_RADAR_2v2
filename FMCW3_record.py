@@ -18,8 +18,8 @@ RX_IDLE_TIMEOUT = 2.0
 
 tx_start_char = b"C"
 
-SWEEP_TIME = 200e-6
-SWEEP_GAP  = 20e-6
+SWEEP_TIME = 500e-6
+SWEEP_GAP  = 10e-6
 
 RECORD_TIME = 5
 
@@ -27,16 +27,16 @@ SAMPLING_FREQUENCY = 2_000_000
 NUMBER_OF_SAMPLES  = int(SAMPLING_FREQUENCY * SWEEP_TIME)
 
 SWEEP_START = 5.20e9
-SWEEP_BW    = 1000e6
+SWEEP_BW    = 900e6
 
 TX_MODE          = 1
 GAIN             = 10
 SWEEP_TYPE       = 0
 DATA_LOG         = 0
 ADC_SELECT       = 0
-USE_PLL          = 1
+PA_MODE          = 0 # 1 on off, 0 on during chirp
 FIR_ENABLE       = 0
-SEND_DATA_TYPE   = 0
+SEND_DATA_TYPE   = 0 # 1 adc, 0 test data
 ADC_RESOLUTION   = 16
 SAMPLE_AVERAGING = 1
 
@@ -110,7 +110,7 @@ def build_packet():
     push_u8("SWEEP_TYPE", SWEEP_TYPE)
     push_u8("DATA_LOG", DATA_LOG)
     push_u8("ADC_SELECT", ADC_SELECT)
-    push_u8("USE_PLL", USE_PLL)
+    push_u8("USE_PLL", PA_MODE)
     push_u8("CHECK_MODE", FIR_ENABLE)
     push_u8("USB_DATA_TYPE", SEND_DATA_TYPE)
     push_u8("ADC_RESOLUTION", ADC_RESOLUTION)
@@ -160,7 +160,7 @@ def build_info_sector():
     put_u32(SWEEP_TYPE)
     put_u32(DATA_LOG)
     put_u32(ADC_SELECT)
-    put_u32(USE_PLL)
+    put_u32(PA_MODE)
     put_u32(FIR_ENABLE)
     put_u32(SEND_DATA_TYPE)
     put_u32(ADC_RESOLUTION)
