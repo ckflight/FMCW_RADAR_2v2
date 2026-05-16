@@ -23,7 +23,7 @@ WRITE_CHUNK_SIZE = 0x10000
 # =================================================
 
 tx_start_char = b"C"
-SWEEP_TIME = 250e-6
+SWEEP_TIME = 1000e-6
 SWEEP_GAP  = 10e-6 # min 60-80 micro or so is needed for ft2232h fmcw3 usb mode
 
 RECORD_TIME = 5
@@ -31,8 +31,8 @@ RECORD_TIME = 5
 SAMPLING_FREQUENCY = 2_000_000
 NUMBER_OF_SAMPLES  = int(SAMPLING_FREQUENCY * SWEEP_TIME)
 
-SWEEP_START = 5.20e9
-SWEEP_BW    = 900e6
+SWEEP_START = 5.30e9
+SWEEP_BW    = 800e6
 
 TX_MODE          = 1
 GAIN             = 10
@@ -41,7 +41,7 @@ DATA_LOG         = 0
 ADC_SELECT       = 0
 USE_PLL          = 1
 FIR_ENABLE       = 0 # 1 enable fir, 0 nofir
-SEND_DATA_TYPE   = 0 # 1 for adc, 0 for test data
+SEND_DATA_TYPE   = 1 # 1 for adc, 0 for test data
 ADC_RESOLUTION   = 16
 SAMPLE_AVERAGING = 1
 
