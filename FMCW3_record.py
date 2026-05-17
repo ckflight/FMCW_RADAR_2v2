@@ -17,9 +17,17 @@ WRITE_CHUNK_SIZE = 0x10000
 RX_IDLE_TIMEOUT = 2.0
 
 tx_start_char = b"C"
+TEST_MUX         = 0 # 1 generate a test mux to test project, 0 adf4158 generated mux
 
-SWEEP_TIME = 500e-6
-SWEEP_GAP  = 10e-6
+# ADF4158 Setting
+if TEST_MUX == 0:
+    SWEEP_TIME = 250e-6
+    SWEEP_GAP  = 10e-6
+
+# Test mux settings
+else:
+    SWEEP_TIME = 250e-6 # fpga sets this. this number has no affect
+    SWEEP_GAP  = 10e-6
 
 RECORD_TIME = 5
 
@@ -29,14 +37,13 @@ NUMBER_OF_SAMPLES  = int(SAMPLING_FREQUENCY * SWEEP_TIME)
 SWEEP_START = 5.20e9
 SWEEP_BW    = 900e6
 
-TX_MODE          = 1
 GAIN             = 10
 SWEEP_TYPE       = 0
 DATA_LOG         = 0
 ADC_SELECT       = 0
 PA_MODE          = 0 # 1 on off, 0 on during chirp
 FIR_ENABLE       = 0
-SEND_DATA_TYPE   = 0 # 1 adc, 0 test data
+SEND_DATA_TYPE   = 1 # 1 adc, 0 test data
 ADC_RESOLUTION   = 16
 SAMPLE_AVERAGING = 1
 
@@ -105,7 +112,7 @@ def build_packet():
     push_u16("SWEEP_START", np.uint16(SWEEP_START / 1e7))
     push_u16("SWEEP_BW", np.uint16(SWEEP_BW / 1e6))
 
-    push_u8("TX_MODE", TX_MODE)
+    push_u8("TEST_MUX", TEST_MUX)
     push_u8("GAIN", GAIN)
     push_u8("SWEEP_TYPE", SWEEP_TYPE)
     push_u8("DATA_LOG", DATA_LOG)
@@ -155,7 +162,7 @@ def build_info_sector():
     put_f32(SWEEP_START)
     put_f32(SWEEP_BW)
 
-    put_u32(TX_MODE)
+    put_u32(TEST_MUX)
     put_u32(GAIN)
     put_u32(SWEEP_TYPE)
     put_u32(DATA_LOG)
