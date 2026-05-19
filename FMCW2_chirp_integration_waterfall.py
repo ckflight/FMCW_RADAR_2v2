@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 OPERATING_SYSTEM = 1   # 1 = Ubuntu/Linux, 2 = Windows
 
 if OPERATING_SYSTEM == 1:
-    BIN_FILE = "/home/ck/Desktop/fmcw2_bin_files/corridore_walk1_att.bin"
+    BIN_FILE = "/home/ck/Desktop/fmcw2_bin_files/10bit_dbfs_64chirp.bin"
 elif OPERATING_SYSTEM == 2:
     BIN_FILE = r"C:\Users\CK\Desktop\flight_log.bin"
 
@@ -178,8 +178,10 @@ print(f"Raw max             : {int(data_u16.max())}")
 print(f"Raw mean            : {float(data_u16.mean()):.2f}")
 
 # Unsigned ADC -> centered signed-like float
-ADC_CENTER = 1 << (ADC_BITS - 1)
 ADC_FULL_SCALE = 1 << ADC_BITS
+ADC_CENTER = 1 << (ADC_BITS - 1)
+
+FS_PEAK = ADC_CENTER
 
 data_adc = data_u16.astype(np.float32) - ADC_CENTER
 chirps = data_adc.reshape(num_chirps, SAMPLES_PER_CHIRP)
@@ -210,10 +212,6 @@ print(f"MAX_RANGE_DISPLAY   : {MAX_RANGE_DISPLAY:.2f} m")
 # -----------------------------
 w = np.hanning(SAMPLES_PER_CHIRP)
 cg = np.sum(w) / SAMPLES_PER_CHIRP
-
-# Use ADC full-scale code span for generic 10/12/14/16-bit dBFS scaling
-FS_PEAK = ADC_FULL_SCALE
-
 
 # -----------------------------
 # Plot setup
