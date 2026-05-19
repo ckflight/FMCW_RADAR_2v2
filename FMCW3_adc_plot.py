@@ -2,106 +2,99 @@ import numpy as np
 import matplotlib.pyplot as plt
 import struct
 
-PLOT_ADC       = 1
-PLOT_TEST_DATA = 0
+# ================= USER SETTINGS =================
 
 FILENAME = "record.bin"
-HEADER = b"\xC8\xC8\xC8\xC8"
 
-INFO_SECTOR_SIZE = 512
+PLOT_ADC = 1          # 1 = plot ADC time-domain
+PLOT_FFT = 1          # 1 = plot FFT/range-domain
 
 START_CHIRP = 0
-END_CHIRP   = None
-CHIRP_STEP  = 10
+END_CHIRP = None
+CHIRP_STEP = 1
 FRAME_DELAY = 0.001
 
-ADC_BITS = 12
+CONVERT_TO_VOLTAGE = 0
 ADC_FULL_SCALE_VOLTAGE = 3.0
 
+REMOVE_DC = False
+USE_WINDOW = True
+
+ADC_ENDIAN = ">i2"  # < looks like a waveform but > is the correct format
+
+# =================================================
+
+HEADER = b"\xC8\xC8\xC8\xC8"
+INFO_SECTOR_SIZE = 512
 BYTES_PER_SAMPLE_PAIR = 4
+C = 3e8
 
-def print_info(info):
-    print("\nINFO SECTOR")
-    print("-----------")
 
-    readable = {
-        "VERSION":              info["VERSION"],
-        "SWEEP_TIME":           f"{info['SWEEP_TIME'] * 1e6:.0f} us",
-        "SWEEP_GAP":            f"{info['SWEEP_GAP'] * 1e6:.0f} us",
-        "RECORD_TIME":          f"{info['RECORD_TIME']} s",
-        "SAMPLING_FREQUENCY":   f"{info['SAMPLING_FREQUENCY'] / 1e6:.3f} MHz",
-        "NUMBER_OF_SAMPLES":    info["NUMBER_OF_SAMPLES"],
-        "SWEEP_START":          f"{info['SWEEP_START'] / 1e6:.0f} MHz",
-        "SWEEP_BW":             f"{info['SWEEP_BW'] / 1e6:.0f} MHz",
-        "TX_MODE":              info["TX_MODE"],
-        "GAIN":                 f"{info['GAIN']} dB",
-        "SWEEP_TYPE":           info["SWEEP_TYPE"],
-        "DATA_LOG":             info["DATA_LOG"],
-        "ADC_SELECT":           info["ADC_SELECT"],
-        "PA_MODE":              info["PA_MODE"],
-        "FIR_ENABLE":           info["FIR_ENABLE"],
-        "SEND_DATA_TYPE":       info["SEND_DATA_TYPE"],
-        "ADC_RESOLUTION":       f"{info['ADC_RESOLUTION']} bit",
-        "SAMPLE_AVERAGING":     info["SAMPLE_AVERAGING"],
-        "HZ_PER_M":             f"{info['HZ_PER_M']:.1f} Hz/m",
-        "INFO_SECTOR_SIZE":     f"{info['INFO_SECTOR_SIZE']} bytes",
-        "DATA_START_BYTE":      info["DATA_START_BYTE"],
-    }
+def read_u32(buf, offset):
+    return struct.unpack_from("<I", buf, offset)[0], offset + 4
 
-    for k, v in readable.items():
-        print(f"{k:<22}: {v}")
+
+def read_f32(buf, offset):
+    return struct.unpack_from("<f", buf, offset)[0], offset + 4
+
 
 def parse_info_sector(info):
-
     if info[0:4] != b"FMCW":
-        raise RuntimeError("Invalid info sector magic. Expected FMCW.")
+        raise RuntimeError("Invalid info sector magic")
 
-    offset = 4
-
-    def get_u32():
-        nonlocal offset
-        value = struct.unpack_from("<I", info, offset)[0]
-        offset += 4
-        return value
-
-    def get_f32():
-        nonlocal offset
-        value = struct.unpack_from("<f", info, offset)[0]
-        offset += 4
-        return value
-
+    o = 4
     parsed = {}
 
-    parsed["VERSION"] = get_u32()
+    parsed["VERSION"], o = read_u32(info, o)
+    parsed["SWEEP_TIME"], o = read_f32(info, o)
+    parsed["SWEEP_GAP"], o = read_f32(info, o)
+    parsed["RECORD_TIME"], o = read_u32(info, o)
 
-    parsed["SWEEP_TIME"] = get_f32()
-    parsed["SWEEP_GAP"] = get_f32()
-    parsed["RECORD_TIME"] = get_u32()
+    parsed["SAMPLING_FREQUENCY"], o = read_u32(info, o)
+    parsed["NUMBER_OF_SAMPLES"], o = read_u32(info, o)
 
-    parsed["SAMPLING_FREQUENCY"] = get_u32()
-    parsed["NUMBER_OF_SAMPLES"] = get_u32()
+    parsed["SWEEP_START"], o = read_f32(info, o)
+    parsed["SWEEP_BW"], o = read_f32(info, o)
 
-    parsed["SWEEP_START"] = get_f32()
-    parsed["SWEEP_BW"] = get_f32()
+    # Skip unused config words
+    for _ in range(10):
+        _, o = read_u32(info, o)
 
-    parsed["TX_MODE"] = get_u32()
-    parsed["GAIN"] = get_u32()
-    parsed["SWEEP_TYPE"] = get_u32()
-    parsed["DATA_LOG"] = get_u32()
-    parsed["ADC_SELECT"] = get_u32()
-    parsed["PA_MODE"] = get_u32()
-    parsed["FIR_ENABLE"] = get_u32()
-    parsed["SEND_DATA_TYPE"] = get_u32()
-    parsed["ADC_RESOLUTION"] = get_u32()
-    parsed["SAMPLE_AVERAGING"] = get_u32()
-
-    parsed["HZ_PER_M"] = get_f32()
-
-    parsed["INFO_SECTOR_SIZE"] = get_u32()
-    parsed["DATA_START_BYTE"] = get_u32()
+    parsed["HZ_PER_M"], o = read_f32(info, o)
+    parsed["INFO_SECTOR_SIZE"], o = read_u32(info, o)
+    parsed["DATA_START_BYTE"], o = read_u32(info, o)
 
     return parsed
 
+
+def print_info(info):
+    print("\nINFO")
+    print("----")
+    print("Sweep time        :", f"{info['SWEEP_TIME'] * 1e6:.0f} us")
+    print("Sweep gap         :", f"{info['SWEEP_GAP'] * 1e6:.0f} us")
+    print("Sampling freq     :", f"{info['SAMPLING_FREQUENCY'] / 1e6:.3f} MHz")
+    print("Samples/chirp     :", info["NUMBER_OF_SAMPLES"])
+    print("Sweep start       :", f"{info['SWEEP_START'] / 1e6:.0f} MHz")
+    print("Sweep BW          :", f"{info['SWEEP_BW'] / 1e6:.0f} MHz")
+
+
+def calculate_fft(signal, fs):
+    signal = signal.astype(np.float32)
+
+    if REMOVE_DC:
+        signal = signal - np.mean(signal)
+
+    if USE_WINDOW:
+        signal = signal * np.hanning(len(signal))
+
+    freq = np.fft.rfftfreq(len(signal), d=1.0 / fs)
+    fft_data = np.fft.rfft(signal)
+    mag_db = 20 * np.log10(np.abs(fft_data) + 1e-12)
+
+    return freq, mag_db
+
+
+# ================= READ FILE =================
 
 with open(FILENAME, "rb") as f:
     raw_all = f.read()
@@ -110,157 +103,189 @@ info_raw = raw_all[:INFO_SECTOR_SIZE]
 raw_data = raw_all[INFO_SECTOR_SIZE:]
 
 info = parse_info_sector(info_raw)
-
 print_info(info)
 
-SAMPLES_PER_CHIRP = int(info["NUMBER_OF_SAMPLES"])
-ADC_BITS = int(info["ADC_RESOLUTION"])
+samples_per_chirp = int(info["NUMBER_OF_SAMPLES"])
+fs = float(info["SAMPLING_FREQUENCY"])
+slope = info["SWEEP_BW"] / info["SWEEP_TIME"]
 
-BYTES_PER_CHIRP = SAMPLES_PER_CHIRP * BYTES_PER_SAMPLE_PAIR
+bytes_per_chirp = samples_per_chirp * BYTES_PER_SAMPLE_PAIR
 
-print("\nDERIVED")
-print("-------")
-print("SAMPLES_PER_CHIRP   :", SAMPLES_PER_CHIRP)
-print("BYTES_PER_CHIRP     :", BYTES_PER_CHIRP)
-print("ADC_BITS            :", ADC_BITS)
-print("RAW FILE BYTES      :", len(raw_all))
-print("RAW DATA BYTES      :", len(raw_data))
+# ================= FIND CHIRPS =================
 
 header_positions = []
 idx = 0
 
 while True:
     idx = raw_data.find(HEADER, idx)
+
     if idx < 0:
         break
 
     header_positions.append(idx)
     idx += len(HEADER)
 
-print("\nHEADERS FOUND       :", len(header_positions))
-
-if len(header_positions) == 0:
-    raise RuntimeError("No header found")
+print("\nHeaders found      :", len(header_positions))
 
 chirp_payloads = []
 
-for h_idx in header_positions:
-    start = h_idx + len(HEADER)
-    end   = start + BYTES_PER_CHIRP
+for h in header_positions:
+    start = h + len(HEADER)
+    end = start + bytes_per_chirp
 
     if end <= len(raw_data):
         chirp_payloads.append(raw_data[start:end])
 
-print("VALID CHIRPS        :", len(chirp_payloads))
-
 if len(chirp_payloads) == 0:
-    raise RuntimeError("No complete chirp found after headers")
+    raise RuntimeError("No valid chirps found")
 
+print("Valid chirps       :", len(chirp_payloads))
 
-if PLOT_TEST_DATA == 1:
+# ================= DECODE ADC =================
 
-    chirps = []
+adc_a_chirps = []
+adc_b_chirps = []
 
-    for chirp in chirp_payloads:
-        words32 = np.frombuffer(chirp, dtype=">u4")
-        chirps.append(words32)
+adc_max = 32768.0
 
-    chirps = np.array(chirps)
-    num_chirps = chirps.shape[0]
+for chirp in chirp_payloads:
+    samples = np.frombuffer(chirp, dtype=ADC_ENDIAN)
 
-    print("NUM CHIRPS          :", num_chirps)
-    print("WORDS/CHIRP         :", chirps.shape[1])
+    # Same logic as plot_log.py:
+    # ch1 = l[::2]
+    # ch2 = l[1::2]
+    adc_a = samples[0::2]
+    adc_b = samples[1::2]
 
-    if END_CHIRP is None:
-        END_CHIRP = num_chirps
+    if CONVERT_TO_VOLTAGE == 1:
+        adc_a_v = adc_a.astype(np.float32) / adc_max * ADC_FULL_SCALE_VOLTAGE
+        adc_b_v = adc_b.astype(np.float32) / adc_max * ADC_FULL_SCALE_VOLTAGE
+    
+        adc_a_chirps.append(adc_a_v)
+        adc_b_chirps.append(adc_b_v)
 
-    plt.ion()
-    fig, ax = plt.subplots(figsize=(12, 6))
+    else:
+        adc_a_chirps.append(adc_a)
+        adc_b_chirps.append(adc_b)
 
-    x = np.arange(SAMPLES_PER_CHIRP)
-    line, = ax.plot(x, chirps[0])
+adc_a_chirps = np.array(adc_a_chirps)
+adc_b_chirps = np.array(adc_b_chirps)
 
-    ax.set_xlabel("Sample in chirp")
-    ax.set_ylabel("32-bit counter value")
-    ax.grid(True)
-    ax.set_ylim(0, np.max(chirps) + 10)
+num_chirps = len(adc_a_chirps)
 
-    for chirp_idx in range(START_CHIRP, END_CHIRP, CHIRP_STEP):
-        line.set_ydata(chirps[chirp_idx])
-        ax.set_title(f"TEST DATA - Chirp {chirp_idx + 1}/{num_chirps}")
+if END_CHIRP is None:
+    END_CHIRP = num_chirps
 
-        fig.canvas.draw()
-        fig.canvas.flush_events()
-        plt.pause(FRAME_DELAY)
+print("Samples/channel    :", adc_a_chirps.shape[1])
 
-    plt.ioff()
-    plt.show()
+# ================= CREATE PLOTS =================
 
+plot_count = 0
 
-if PLOT_ADC == 1:
+if PLOT_ADC:
+    plot_count += 2
 
-    adc_a_chirps = []
-    adc_b_chirps = []
+if PLOT_FFT:
+    plot_count += 2
 
-    adc_max = (2 ** ADC_BITS) - 1
+if plot_count == 0:
+    raise RuntimeError("Enable PLOT_ADC or PLOT_FFT")
 
-    for chirp in chirp_payloads:
+fig, axes = plt.subplots(plot_count, 1, figsize=(12, 2.7 * plot_count))
 
-        samples_u16 = np.frombuffer(chirp, dtype=">u2")
+if plot_count == 1:
+    axes = [axes]
 
-        adc_a_u12 = samples_u16[0::2] & 0x0FFF
-        adc_b_u12 = samples_u16[1::2] & 0x0FFF
+ax_index = 0
 
-        adc_a_voltage = (
-            adc_a_u12.astype(np.float32) / adc_max
-        ) * ADC_FULL_SCALE_VOLTAGE
+x_sample = np.arange(samples_per_chirp)
 
-        adc_b_voltage = (
-            adc_b_u12.astype(np.float32) / adc_max
-        ) * ADC_FULL_SCALE_VOLTAGE
+if PLOT_ADC:
+    ax_adc_a = axes[ax_index]
+    ax_index += 1
 
-        adc_a_chirps.append(adc_a_voltage)
-        adc_b_chirps.append(adc_b_voltage)
+    ax_adc_b = axes[ax_index]
+    ax_index += 1
 
-    adc_a_chirps = np.array(adc_a_chirps)
-    adc_b_chirps = np.array(adc_b_chirps)
+    line_adc_a, = ax_adc_a.plot(x_sample, adc_a_chirps[0])
+    line_adc_b, = ax_adc_b.plot(x_sample, adc_b_chirps[0])
 
-    num_chirps = adc_a_chirps.shape[0]
+    ax_adc_a.set_title("ADC A Time Domain")
+    ax_adc_b.set_title("ADC B Time Domain")
 
-    print("NUM CHIRPS          :", num_chirps)
-    print("SAMPLES/CH          :", adc_a_chirps.shape[1])
+    ax_adc_a.set_ylabel("Voltage (V)")
+    ax_adc_b.set_ylabel("Voltage (V)")
+    ax_adc_b.set_xlabel("Sample")
 
-    if END_CHIRP is None:
-        END_CHIRP = num_chirps
+    ax_adc_a.grid(True)
+    ax_adc_b.grid(True)
 
-    plt.ion()
-    fig, ax = plt.subplots(figsize=(12, 6))
+    ax_adc_a.set_ylim(adc_a_chirps.min() - 0.05, adc_a_chirps.max() + 0.05)
+    ax_adc_b.set_ylim(adc_b_chirps.min() - 0.05, adc_b_chirps.max() + 0.05)
 
-    x = np.arange(SAMPLES_PER_CHIRP)
+if PLOT_FFT:
+    ax_fft_a = axes[ax_index]
+    ax_index += 1
 
-    line_a, = ax.plot(x, adc_a_chirps[0], label="ADC A")
-    line_b, = ax.plot(x, adc_b_chirps[0], label="ADC B")
+    ax_fft_b = axes[ax_index]
+    ax_index += 1
 
-    ax.set_xlabel("Sample in chirp")
-    ax.set_ylabel("ADC Voltage (V)")
-    ax.grid(True)
-    ax.legend()
+    freq_a, mag_a = calculate_fft(adc_a_chirps[0], fs)
+    freq_b, mag_b = calculate_fft(adc_b_chirps[0], fs)
 
-    y_min = min(adc_a_chirps.min(), adc_b_chirps.min())
-    y_max = max(adc_a_chirps.max(), adc_b_chirps.max())
+    range_a = freq_a * C / (2 * slope)
+    range_b = freq_b * C / (2 * slope)
 
-    ax.set_ylim(y_min - 0.05, y_max + 0.05)
+    line_fft_a, = ax_fft_a.plot(range_a, mag_a)
+    line_fft_b, = ax_fft_b.plot(range_b, mag_b)
 
-    for chirp_idx in range(START_CHIRP, END_CHIRP, CHIRP_STEP):
+    ax_fft_a.set_title("ADC A Range FFT")
+    ax_fft_b.set_title("ADC B Range FFT")
 
-        line_a.set_ydata(adc_a_chirps[chirp_idx])
-        line_b.set_ydata(adc_b_chirps[chirp_idx])
+    ax_fft_a.set_ylabel("Magnitude (dB)")
+    ax_fft_b.set_ylabel("Magnitude (dB)")
+    ax_fft_b.set_xlabel("Range (m)")
 
-        ax.set_title(f"ADC Voltage - Chirp {chirp_idx + 1}/{num_chirps}")
+    ax_fft_a.grid(True)
+    ax_fft_b.grid(True)
 
-        fig.canvas.draw()
-        fig.canvas.flush_events()
-        plt.pause(FRAME_DELAY)
+    ax_fft_a.set_xlim(0, range_a.max())
+    ax_fft_b.set_xlim(0, range_b.max())
 
-    plt.ioff()
-    plt.show()
+# ================= UPDATE LOOP =================
+
+plt.ion()
+
+for chirp_idx in range(START_CHIRP, END_CHIRP, CHIRP_STEP):
+    adc_a = adc_a_chirps[chirp_idx]
+    adc_b = adc_b_chirps[chirp_idx]
+
+    if PLOT_ADC:
+        line_adc_a.set_ydata(adc_a)
+        line_adc_b.set_ydata(adc_b)
+
+    if PLOT_FFT:
+        freq_a, mag_a = calculate_fft(adc_a, fs)
+        freq_b, mag_b = calculate_fft(adc_b, fs)
+
+        range_a = freq_a * C / (2 * slope)
+        range_b = freq_b * C / (2 * slope)
+
+        line_fft_a.set_xdata(range_a)
+        line_fft_a.set_ydata(mag_a)
+
+        line_fft_b.set_xdata(range_b)
+        line_fft_b.set_ydata(mag_b)
+
+        ax_fft_a.set_ylim(mag_a.min() - 5, mag_a.max() + 5)
+        ax_fft_b.set_ylim(mag_b.min() - 5, mag_b.max() + 5)
+
+    fig.suptitle(f"Chirp {chirp_idx + 1}/{num_chirps}")
+    fig.tight_layout()
+    fig.canvas.draw()
+    fig.canvas.flush_events()
+
+    plt.pause(FRAME_DELAY)
+
+plt.ioff()
+plt.show()

@@ -10,27 +10,32 @@ import binascii
 from datetime import datetime
 
 ADC_SELECT          = 0             # 0 for ADC DMA, 1 for External ADC MAX1426
-RECORD_TIME         = 40            # in sec
+RECORD_TIME         = 5             # in sec
 TEST_DEVICE         = 1             # 0 STM32F4, 1 STM32H7, 2 FPGA
 OPERATING_SYSTEM    = 1             # 0 MAC, 1 UBUNTU, 2 WINDOWS (Havent implemented serial on windows.)
 
 # important note: After changing R and C values of pll circuit freq ramp bw values are perfect.
 # Notes: Current setup gives clean 50 MHz as well no noise at all on tune voltage ramp at 50 MHz (higher ramp is better any case)!!!
 SWEEP_START         = 5.20e9 
-SWEEP_BW            = 1000e6
-TX_POWER_DBM        = 0
+SWEEP_BW            = 900e6
+
+DATA_LOG            = 1             # 0 for USB transfer, 1 for MicroCard Log
+SWEEP_TIME          = 250e-6        # 100 micro or 10 ms all working, sdcard log is designed for 128 chirp 250 micro for now
+CPI_CHIRP           = 128           # 1 for USB, 32 for 1ms SWEEP_TIME, 64 for 500, 128 for 250 (max)
+ADC_RESOLUTION      = 16
+
+TX_MODE             = 0             # 0 for continuous tx, 1 for on off with tx, 2 for testing when tx off
 SWEEP_TYPE          = 0             # 0 for Sawtooth, 1 for Triangular
 USE_PLL             = 1             # 0 for DAC, 1 for PLL
-TX_MODE             = 1             # 0 for continuous tx, 1 for on off with tx, 2 for testing when tx off
-GAIN                = 10            # 1 to 70 stmf4, 3 to 85 for H7
-DATA_LOG            = 0             # 0 for USB transfer, 1 for MicroCard Log
-SWEEP_TIME          = 1000e-6       # 100 micro or 10 ms all working, sdcard log is designed for 128 chirp 250 micro for now
-CPI_CHIRP           = 128           # 1 for USB, 32 for 1ms SWEEP_TIME, 64 for 500, 128 for 250 (max)
+
+GAIN                = 10            # 1 to 70 stmf4, 3 to 85 for H7 (it is fixed for H7)
+TX_POWER_DBM        = 0
 CHECK_MODE          = 0             # 0 ADC_DMA SAMPLING, 1 ADC_DMA USB, 2 MAX1426, 4 FPGA
 USB_DATA_TYPE       = 1             # 0-> floating/2 x100 is sent ove usb, 1-> 16bit data is sent
-ADC_RESOLUTION      = 16
+
 PHASE_DISTANCE      = 380   # cm
 
+# Select ADC FS here
 if ADC_SELECT == 0:
     # 1ms sampling numbers are actual sampling khz freq.
 
@@ -43,12 +48,13 @@ if ADC_SELECT == 0:
         NUMBER_OF_SAMPLES = int(SAMPLING_FREQUENCY * SWEEP_TIME) * 1  # NUMBER_OF_SAMPLES(16bit) = SAMPLING_FREQUENCY * SWEEP_TIME(int)
 
     if TEST_DEVICE == 1:
-        # 16bit Options: 3.72MHz(3720), 3.38MHz(3380)
-        # 14bit Options: 4.14MHz(4140), 3.72MHz(3720)
-        # 12bit Options: 4.64MHz(4640), 4.14MHz(4140)
+        # 16bit Options: 3.70MHz(3700000)
+        # 14bit Options: 4.10MHz(4100000)
+        # 12bit Options: 4.60MHz(4600000)
+        # 10bit Options: 5.30MHz(5300000)
         # Oversampling 2 works with highest rates for each bit options.
-        SAMPLE_AVERAGING = 2 #1, 2, 4, 8, 16
-        SAMPLING_FREQUENCY = int(3720000 / SAMPLE_AVERAGING) # oversampling 2 is enabled
+        SAMPLE_AVERAGING = 1  # 1, 2, 4, 8, 16
+        SAMPLING_FREQUENCY = int(3700000 / SAMPLE_AVERAGING)
         NUMBER_OF_SAMPLES = int(SAMPLING_FREQUENCY * SWEEP_TIME) * 1  # NUMBER_OF_SAMPLES(16bit) = SAMPLING_FREQUENCY * SWEEP_TIME(int)
 
     if TEST_DEVICE == 2:
@@ -57,7 +63,7 @@ if ADC_SELECT == 0:
         NUMBER_OF_SAMPLES = int(SAMPLING_FREQUENCY * SWEEP_TIME) * 1  # NUMBER_OF_SAMPLES(16bit) = SAMPLING_FREQUENCY * SWEEP_TIME(int)
         BUFFER_LEN = 4096
 else:
-    SAMPLING_FREQUENCY  = 400000
+    SAMPLING_FREQUENCY  = 4000000
     NUMBER_OF_SAMPLES   = 400  # NUMBER_OF_SAMPLE(16bit) = SAMPLING_FREQUENCY * SWEEP_TIME(int)
 
 # VCO range is 0V = 5.1GHz and 10V = 6.3GHz range 1200 max
@@ -69,7 +75,7 @@ if DATA_LOG == 1:
     if TEST_DEVICE != 2:
         # overwrite these parameters for card log to card log
         SAMPLE_AVERAGING = 1 
-        SAMPLING_FREQUENCY = int(3720000 / SAMPLE_AVERAGING) 
+        SAMPLING_FREQUENCY = int(3700000 / SAMPLE_AVERAGING) 
         NUMBER_OF_SAMPLES = int(SAMPLING_FREQUENCY * SWEEP_TIME) * 1
 
     elif TEST_DEVICE == 2:
@@ -233,6 +239,7 @@ def Configuration_Process_FTDI(device):
     write_u8(device, "USB_DATA_TYPE", np.uint8(USB_DATA_TYPE))
     write_u8(device, "ADC_RESOLUTION", np.uint8(ADC_RESOLUTION))
     write_u8(device, "SAMPLE_AVERAGING", np.uint8(SAMPLE_AVERAGING))
+    write_u8(device, "CPI_CHIRP", np.uint8(CPI_CHIRP))
 
 def Configuration_Process():
 
@@ -320,6 +327,9 @@ def Configuration_Process():
 
             sample_averaging = np.uint8(SAMPLE_AVERAGING)
             ser.write(binascii.hexlify(sample_averaging))
+
+            chirp_number_per_cpi = np.uint8(CPI_CHIRP)
+            ser.write(binascii.hexlify(chirp_number_per_cpi))
 
             state = 1
             pass
@@ -415,6 +425,8 @@ if DATA_LOG == 0:
     data_record_file.write(str(ADC_RESOLUTION))
     data_record_file.write("\r\n")
     data_record_file.write(str(PHASE_DISTANCE))
+    data_record_file.write("\r\n")
+    data_record_file.write(str(CPI_CHIRP))
     data_record_file.write("\r\n")
     data_record_file.write(current_time)
     data_record_file.write("\r\n")

@@ -4,38 +4,40 @@ import matplotlib.pyplot as plt
 OPERATING_SYSTEM = 1   # 1 = Ubuntu/Linux, 2 = Windows
 
 if OPERATING_SYSTEM == 1:
-    BIN_FILE = "/home/ck/Desktop/flight_log.bin"
+    BIN_FILE = "/home/ck/Desktop/fmcw2_bin_files/16bit_dbfs_128chirp.bin"
 elif OPERATING_SYSTEM == 2:
     BIN_FILE = r"C:\Users\CK\Desktop\flight_log.bin"
 
-INFO_SECTOR_SIZE        = 512
-MAX_RANGE_DISPLAY       = 70 # range upper plot limit in meters 
+INFO_SECTOR_SIZE = 512
+
 
 def read_u32_be(buf, offset):
-    return ((buf[offset] << 24) |
-            (buf[offset + 1] << 16) |
-            (buf[offset + 2] << 8) |
-            (buf[offset + 3]))
+    return (
+        (buf[offset] << 24) |
+        (buf[offset + 1] << 16) |
+        (buf[offset + 2] << 8) |
+        buf[offset + 3]
+    )
+
 
 def read_u16_be(buf, offset):
-    return ((buf[offset] << 8) |
-            (buf[offset + 1]))
+    return (buf[offset] << 8) | buf[offset + 1]
 
 
 # -----------------------------
-# Read the whole .bin file once first 512 byte is info, rest is data
+# Read file
 # -----------------------------
 with open(BIN_FILE, "rb") as f:
     file_bytes = f.read()
 
 if len(file_bytes) < INFO_SECTOR_SIZE:
-    raise ValueError("File is smaller than 512-byte info sector")
+    raise ValueError("File is smaller than info sector")
 
-info = file_bytes[:INFO_SECTOR_SIZE]
 
 # -----------------------------
 # Decode info sector
 # -----------------------------
+info = file_bytes[:INFO_SECTOR_SIZE]
 idx = 0
 
 RECORD_COUNTER     = read_u32_be(info, idx); idx += 4
@@ -62,120 +64,119 @@ CHIRP_END_TIMER_US      = read_u32_be(info, idx); idx += 4
 CPI_END_TIMER_US        = read_u32_be(info, idx); idx += 4
 CARD_WRITE_END_TIMER_US = read_u32_be(info, idx); idx += 4
 
-CHIRPS_PER_CPI          = read_u16_be(info, idx); idx += 2
-CPI_COUNTER             = read_u32_be(info, idx); idx += 4
+CHIRPS_PER_CPI = read_u16_be(info, idx); idx += 2
+CPI_COUNTER    = read_u32_be(info, idx); idx += 4
 
-# This is the amount of byte logged
-NUM_OF_BYTES_LOGGED = int(CPI_COUNTER * CHIRPS_PER_CPI * SAMPLES_PER_CHIRP * (ADC_BITS / 8)) 
-
-# Instead of buffering 500 Megabyte whole .bin file, take amount of byte written.
-raw_data = file_bytes[INFO_SECTOR_SIZE: INFO_SECTOR_SIZE + NUM_OF_BYTES_LOGGED]
 
 # -----------------------------
-# Reconstruct user-friendly values
+# Validate parameters
 # -----------------------------
+if ADC_BITS not in (10, 12, 14, 16):
+    raise ValueError(f"Unsupported ADC_BITS = {ADC_BITS}")
+
 FS = FS_KHZ * 1000
-SWEEP_TIME = SWEEP_TIME_US * 1e-6
-SWEEP_GAP = SWEEP_GAP_US * 1e-6
-SWEEP_START = SWEEP_START_SCALED * 1e7
-SWEEP_BW = SWEEP_BW_SCALED * 1e6
-
-# -----------------------------
-# Derived values
-# -----------------------------
-CONFIGURED_PRF_HZ = 0.0
-if (SWEEP_TIME_US + SWEEP_GAP_US) > 0:
-    CONFIGURED_PRF_HZ = 1e6 / (SWEEP_TIME_US + SWEEP_GAP_US)
-
-MEASURED_CHIRP_RATE_HZ = 0.0
-if CHIRP_END_TIMER_US > 0:
-    MEASURED_CHIRP_RATE_HZ = 1e6 / CHIRP_END_TIMER_US
-
-CPI_RATE_HZ = 0.0
-if (CPI_END_TIMER_US + CARD_WRITE_END_TIMER_US) > 0:
-    CPI_RATE_HZ = 1e6 / (CPI_END_TIMER_US + CARD_WRITE_END_TIMER_US)
-
-BYTES_PER_SAMPLE = 2 if USB_DATA_TYPE == 1 else 1
-BYTES_PER_CHIRP = SAMPLES_PER_CHIRP * BYTES_PER_SAMPLE 
-BYTES_PER_CPI = CHIRPS_PER_CPI * BYTES_PER_CHIRP
-
-CONFIGURED_DATA_RATE_MBPS = (BYTES_PER_CHIRP * CONFIGURED_PRF_HZ) / 1e6
-
-CARD_WRITE_SPEED_MBPS = 0.0
-if CARD_WRITE_END_TIMER_US > 0:
-    CARD_WRITE_SPEED_MBPS = BYTES_PER_CPI / CARD_WRITE_END_TIMER_US
-
-APPROX_RECORD_TIME_FROM_COUNTER = 0.0
-if CONFIGURED_PRF_HZ > 0:
-    APPROX_RECORD_TIME_FROM_COUNTER = RECORD_COUNTER / CONFIGURED_PRF_HZ
-
-TOTAL_CPI_TIME_S = (CPI_COUNTER * CPI_END_TIMER_US) / 1e6
-TOTAL_CARD_WRITE_TIME_S = (CPI_COUNTER * CARD_WRITE_END_TIMER_US) / 1e6
-print("\n----- SYSTEM -----")
-print(f"FS                  : {FS/1e6:.2f} MHz")
-print(f"SAMPLES_PER_CHIRP   : {SAMPLES_PER_CHIRP}")
-print(f"HZ_PER_M            : {HZ_PER_M}")
-print(f"TX_POWER            : {TX_POWER_DBM}")
-print(f"TX_VOLT             : {TX_POWER_DBM_VOLT}")
-print(f"SWEEP_START         : {SWEEP_START}")
-print(f"SWEEP_BW            : {SWEEP_BW}")
-
-print("\n----- TIMING -----")
-print(f"SWEEP_TIME          : {SWEEP_TIME_US} us")
-print(f"SWEEP_GAP           : {SWEEP_GAP_US} us")
-print(f"CONFIGURED_PRF      : {CONFIGURED_PRF_HZ:.2f} Hz")
-print(f"MEASURED_CHIRP_RATE : {MEASURED_CHIRP_RATE_HZ:.2f} Hz")
-
-print("\n----- CPI -----")
-print(f"CHIRPS_PER_CPI      : {CHIRPS_PER_CPI}")
-print(f"CPI_RATE            : {CPI_RATE_HZ:.2f} Hz")
-print(f"CPI_COUNTER         : {CPI_COUNTER}")
-
-print("\n----- DATA -----")
-print(f"BYTES_PER_CHIRP     : {BYTES_PER_CHIRP}")
-print(f"DATA_RATE           : {CONFIGURED_DATA_RATE_MBPS:.2f} MB/s")
-
-print("\n----- SD WRITE -----")
-print(f"WRITE_SPEED         : {CARD_WRITE_SPEED_MBPS:.2f} MB/s")
-
-# -----------------------------
-# Extract RAW ADC only
-# -----------------------------
-raw_data = file_bytes[INFO_SECTOR_SIZE:]
-
-data = np.frombuffer(raw_data, dtype='<u2').astype(np.float32)
-data -= 32768.0
-
 num_chirps = CPI_COUNTER * CHIRPS_PER_CPI
-data = data[:num_chirps * SAMPLES_PER_CHIRP]
 
-chirps = data.reshape(num_chirps, SAMPLES_PER_CHIRP)
+if SAMPLES_PER_CHIRP <= 0:
+    raise ValueError("SAMPLES_PER_CHIRP is zero")
+
+if num_chirps <= 0:
+    raise ValueError("num_chirps is zero")
+
 
 # -----------------------------
-# Plot
+# Print info
 # -----------------------------
-plt.ion
-fig, ax = plt.subplots(figsize=(10,8))
+print("\n----- INFO -----")
+print(f"FS                : {FS / 1e6:.3f} MHz")
+print(f"ADC_BITS          : {ADC_BITS}")
+print(f"SAMPLES_PER_CHIRP : {SAMPLES_PER_CHIRP}")
+print(f"CHIRPS_PER_CPI    : {CHIRPS_PER_CPI}")
+print(f"CPI_COUNTER       : {CPI_COUNTER}")
+print(f"NUM_CHIRPS        : {num_chirps}")
 
+
+# -----------------------------
+# Read ADC samples
+# STM32 ADC DMA stores 10/12/14/16-bit samples inside uint16_t
+# File data is little-endian uint16_t
+# -----------------------------
+expected_samples = num_chirps * SAMPLES_PER_CHIRP
+expected_bytes = expected_samples * 2
+
+raw_data = file_bytes[INFO_SECTOR_SIZE : INFO_SECTOR_SIZE + expected_bytes]
+
+if len(raw_data) < expected_bytes:
+    raise ValueError(
+        f"Not enough raw bytes: got {len(raw_data)}, expected {expected_bytes}"
+    )
+
+adc_u16 = np.frombuffer(raw_data, dtype="<u2", count=expected_samples)
+
+
+# -----------------------------
+# Generic ADC bit handling
+# Works for 10/12/14/16-bit unsigned ADC samples
+# -----------------------------
+ADC_MASK = (1 << ADC_BITS) - 1
+ADC_FULL_SCALE = float(1 << ADC_BITS)
+ADC_CENTER = float(1 << (ADC_BITS - 1))
+
+adc_raw = adc_u16 & ADC_MASK
+adc_centered = adc_raw.astype(np.float32) - ADC_CENTER
+
+# Normalized ADC value, approximately -1.0 to +1.0
+adc_norm = adc_centered / ADC_CENTER
+
+# dBFS sample amplitude
+eps = 1e-12
+adc_dbfs = 20.0 * np.log10(np.abs(adc_norm) + eps)
+
+
+print("\n----- RAW ADC CHECK -----")
+print(f"Raw min       : {adc_raw.min()}")
+print(f"Raw max       : {adc_raw.max()}")
+print(f"Centered min  : {adc_centered.min():.1f}")
+print(f"Centered max  : {adc_centered.max():.1f}")
+print(f"Centered mean : {adc_centered.mean():.2f}")
+print(f"Peak dBFS     : {adc_dbfs.max():.2f} dBFS")
+
+
+# -----------------------------
+# Reshape into chirps
+# -----------------------------
+chirps = adc_centered.reshape(num_chirps, SAMPLES_PER_CHIRP)
+chirps_norm = adc_norm.reshape(num_chirps, SAMPLES_PER_CHIRP)
+
+
+# -----------------------------
+# Plot average raw ADC per CPI
+# -----------------------------
+plt.ion()
+fig, ax = plt.subplots(figsize=(10, 6))
 
 for cpi_idx in range(CPI_COUNTER):
-    
-    start = CHIRPS_PER_CPI * cpi_idx
-    end   = CHIRPS_PER_CPI * (cpi_idx + 1)
-    
-    chirps_cpi = chirps[start : end]
-    
-    average_chirps = np.mean(chirps_cpi, axis = 0)
+    start = cpi_idx * CHIRPS_PER_CPI
+    end = start + CHIRPS_PER_CPI
+
+    chirps_cpi = chirps[start:end]
+    avg_chirp = np.mean(chirps_cpi, axis=0)
+
+    peak = np.max(np.abs(avg_chirp)) / ADC_CENTER
+    peak_dbfs = 20.0 * np.log10(peak + eps)
 
     ax.clear()
-    ax.plot(average_chirps)#, label=f"chirps {idx}", alpha=0.6)
+    ax.plot(avg_chirp)
 
-    ax.set_title(f"Raw ADC CPI {cpi_idx+1}/{CPI_COUNTER}")
+    ax.set_title(
+        f"Average Raw ADC CPI {cpi_idx + 1}/{CPI_COUNTER} | "
+        f"Peak = {peak_dbfs:.2f} dBFS"
+    )
     ax.set_xlabel("Sample Index")
-    ax.set_ylabel("ADC Value")
+    ax.set_ylabel("ADC value centered")
     ax.grid(True)
-    
+
     plt.pause(0.05)
 
-plt.ioff
+plt.ioff()
 plt.show()

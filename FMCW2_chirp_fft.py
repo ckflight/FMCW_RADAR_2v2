@@ -4,27 +4,30 @@ import matplotlib.pyplot as plt
 OPERATING_SYSTEM = 1   # 1 = Ubuntu/Linux, 2 = Windows
 
 if OPERATING_SYSTEM == 1:
-    BIN_FILE = "/home/ck/Desktop/flight_log.bin"
-elif OPERATING_SYSTEM == 2:
+    BIN_FILE = "/home/ck/Desktop/fmcw2_bin_files/10bit_dbfs_64chirp.bin"
+else:
     BIN_FILE = r"C:\Users\CK\Desktop\flight_log.bin"
 
-INFO_SECTOR_SIZE        = 512
-DISPLAY_STEP            = 8       # animate every Nth chirp
-MAX_RANGE_TO_SHOW       = 100     # meters
-AVG_CHIRPS              = 128     # number of chirps for averaged FFT. This is for dBFS calculation not plot related
+INFO_SECTOR_SIZE  = 512
+DISPLAY_STEP      = 1
+MAX_RANGE_TO_SHOW = 300   # meters, change this value
+
 
 def read_u32_be(buf, offset):
-    return ((buf[offset] << 24) |
-            (buf[offset + 1] << 16) |
-            (buf[offset + 2] << 8) |
-            (buf[offset + 3]))
+    return (
+        (buf[offset] << 24) |
+        (buf[offset + 1] << 16) |
+        (buf[offset + 2] << 8) |
+        buf[offset + 3]
+    )
+
 
 def read_u16_be(buf, offset):
-    return ((buf[offset] << 8) |
-            (buf[offset + 1]))
+    return (buf[offset] << 8) | buf[offset + 1]
+
 
 # -----------------------------
-# Read the whole .bin file once first 512 byte is info, rest is data
+# Read file
 # -----------------------------
 with open(BIN_FILE, "rb") as f:
     file_bytes = f.read()
@@ -33,6 +36,7 @@ if len(file_bytes) < INFO_SECTOR_SIZE:
     raise ValueError("File is smaller than 512-byte info sector")
 
 info = file_bytes[:INFO_SECTOR_SIZE]
+
 
 # -----------------------------
 # Decode info sector
@@ -63,27 +67,34 @@ CHIRP_END_TIMER_US      = read_u32_be(info, idx); idx += 4
 CPI_END_TIMER_US        = read_u32_be(info, idx); idx += 4
 CARD_WRITE_END_TIMER_US = read_u32_be(info, idx); idx += 4
 
-CHIRPS_PER_CPI          = read_u16_be(info, idx); idx += 2
-CPI_COUNTER             = read_u32_be(info, idx); idx += 4
+CHIRPS_PER_CPI = read_u16_be(info, idx); idx += 2
+CPI_COUNTER    = read_u32_be(info, idx); idx += 4
 
-# This is the amount of byte logged
-NUM_OF_BYTES_LOGGED = int(CPI_COUNTER * CHIRPS_PER_CPI * SAMPLES_PER_CHIRP * (ADC_BITS / 8)) 
-
-# Instead of buffering 500 Megabyte whole .bin file, take amount of byte written.
-raw_data = file_bytes[INFO_SECTOR_SIZE: INFO_SECTOR_SIZE + NUM_OF_BYTES_LOGGED]
 
 # -----------------------------
-# Reconstruct user-friendly values
+# Validate
 # -----------------------------
+if ADC_BITS not in (10, 12, 14, 16):
+    raise ValueError(f"Unsupported ADC_BITS = {ADC_BITS}")
+
 FS = FS_KHZ * 1000
-SWEEP_TIME = SWEEP_TIME_US * 1e-6
-SWEEP_GAP = SWEEP_GAP_US * 1e-6
-SWEEP_START = SWEEP_START_SCALED * 1e7
-SWEEP_BW = SWEEP_BW_SCALED * 1e6
+num_chirps = CPI_COUNTER * CHIRPS_PER_CPI
+
+if num_chirps <= 0:
+    raise ValueError("num_chirps is zero")
+
+if SAMPLES_PER_CHIRP <= 0:
+    raise ValueError("SAMPLES_PER_CHIRP is zero")
+
 
 # -----------------------------
 # Derived values
 # -----------------------------
+SWEEP_TIME  = SWEEP_TIME_US * 1e-6
+SWEEP_GAP   = SWEEP_GAP_US * 1e-6
+SWEEP_START = SWEEP_START_SCALED * 1e7
+SWEEP_BW    = SWEEP_BW_SCALED * 1e6
+
 CONFIGURED_PRF_HZ = 0.0
 if (SWEEP_TIME_US + SWEEP_GAP_US) > 0:
     CONFIGURED_PRF_HZ = 1e6 / (SWEEP_TIME_US + SWEEP_GAP_US)
@@ -96,9 +107,17 @@ CPI_RATE_HZ = 0.0
 if (CPI_END_TIMER_US + CARD_WRITE_END_TIMER_US) > 0:
     CPI_RATE_HZ = 1e6 / (CPI_END_TIMER_US + CARD_WRITE_END_TIMER_US)
 
-BYTES_PER_SAMPLE = 2 if USB_DATA_TYPE == 1 else 1
-BYTES_PER_CHIRP = SAMPLES_PER_CHIRP * BYTES_PER_SAMPLE 
+
+# -----------------------------
+# ADC byte size
+# Important:
+# STM32 ADC DMA stores 10/12/14/16-bit samples as uint16_t.
+# So file sample size is always 2 bytes/sample.
+# -----------------------------
+BYTES_PER_SAMPLE = 2
+BYTES_PER_CHIRP = SAMPLES_PER_CHIRP * BYTES_PER_SAMPLE
 BYTES_PER_CPI = CHIRPS_PER_CPI * BYTES_PER_CHIRP
+NUM_OF_BYTES_LOGGED = num_chirps * BYTES_PER_CHIRP
 
 CONFIGURED_DATA_RATE_MBPS = (BYTES_PER_CHIRP * CONFIGURED_PRF_HZ) / 1e6
 
@@ -106,16 +125,16 @@ CARD_WRITE_SPEED_MBPS = 0.0
 if CARD_WRITE_END_TIMER_US > 0:
     CARD_WRITE_SPEED_MBPS = BYTES_PER_CPI / CARD_WRITE_END_TIMER_US
 
-APPROX_RECORD_TIME_FROM_COUNTER = 0.0
-if CONFIGURED_PRF_HZ > 0:
-    APPROX_RECORD_TIME_FROM_COUNTER = RECORD_COUNTER / CONFIGURED_PRF_HZ
 
-TOTAL_CPI_TIME_S = (CPI_COUNTER * CPI_END_TIMER_US) / 1e6
-TOTAL_CARD_WRITE_TIME_S = (CPI_COUNTER * CARD_WRITE_END_TIMER_US) / 1e6
+# -----------------------------
+# Print info
+# -----------------------------
 print("\n----- SYSTEM -----")
-print(f"FS                  : {FS/1e6:.2f} MHz")
+print(f"FS                  : {FS / 1e6:.3f} MHz")
+print(f"ADC_BITS            : {ADC_BITS}")
 print(f"SAMPLES_PER_CHIRP   : {SAMPLES_PER_CHIRP}")
 print(f"HZ_PER_M            : {HZ_PER_M}")
+print(f"MAX_RANGE_TO_SHOW   : {MAX_RANGE_TO_SHOW} m")
 
 print("\n----- TIMING -----")
 print(f"SWEEP_TIME          : {SWEEP_TIME_US} us")
@@ -125,39 +144,55 @@ print(f"MEASURED_CHIRP_RATE : {MEASURED_CHIRP_RATE_HZ:.2f} Hz")
 
 print("\n----- CPI -----")
 print(f"CHIRPS_PER_CPI      : {CHIRPS_PER_CPI}")
-print(f"CPI_RATE            : {CPI_RATE_HZ:.2f} Hz")
 print(f"CPI_COUNTER         : {CPI_COUNTER}")
+print(f"NUM_CHIRPS          : {num_chirps}")
+print(f"CPI_RATE            : {CPI_RATE_HZ:.2f} Hz")
 
 print("\n----- DATA -----")
+print(f"BYTES_PER_SAMPLE    : {BYTES_PER_SAMPLE}")
 print(f"BYTES_PER_CHIRP     : {BYTES_PER_CHIRP}")
 print(f"DATA_RATE           : {CONFIGURED_DATA_RATE_MBPS:.2f} MB/s")
-
-print("\n----- SD WRITE -----")
 print(f"WRITE_SPEED         : {CARD_WRITE_SPEED_MBPS:.2f} MB/s")
+
 
 # -----------------------------
 # Read ADC data
 # -----------------------------
-data = np.frombuffer(raw_data, dtype='<u2')
+raw_data = file_bytes[INFO_SECTOR_SIZE : INFO_SECTOR_SIZE + NUM_OF_BYTES_LOGGED]
 
-num_chirps = CPI_COUNTER * CHIRPS_PER_CPI
-data = data[:num_chirps * SAMPLES_PER_CHIRP]
-chirps = data.reshape(num_chirps, SAMPLES_PER_CHIRP)
+if len(raw_data) < NUM_OF_BYTES_LOGGED:
+    raise ValueError(
+        f"Not enough data bytes: got {len(raw_data)}, expected {NUM_OF_BYTES_LOGGED}"
+    )
 
-print("\n----- DATA -----")
-print("Total samples :", len(data))
-print("Num chirps    :", num_chirps)
-print("Samples/chirp :", SAMPLES_PER_CHIRP)
+adc_u16 = np.frombuffer(raw_data, dtype="<u2", count=num_chirps * SAMPLES_PER_CHIRP)
 
-# unsigned ADC -> centered signed-like float
-chirps = chirps.astype(np.float32) - 32768.0
 
 # -----------------------------
-# FFT precompute once
+# Generic ADC bit handling
+# -----------------------------
+ADC_MASK = (1 << ADC_BITS) - 1
+ADC_CENTER = float(1 << (ADC_BITS - 1))
+
+adc_raw = adc_u16 & ADC_MASK
+adc_centered = adc_raw.astype(np.float32) - ADC_CENTER
+
+chirps = adc_centered.reshape(num_chirps, SAMPLES_PER_CHIRP)
+
+print("\n----- ADC CHECK -----")
+print(f"Raw min       : {adc_raw.min()}")
+print(f"Raw max       : {adc_raw.max()}")
+print(f"Centered min  : {adc_centered.min():.1f}")
+print(f"Centered max  : {adc_centered.max():.1f}")
+print(f"Centered mean : {adc_centered.mean():.2f}")
+
+
+# -----------------------------
+# FFT precompute
 # -----------------------------
 w = np.hanning(SAMPLES_PER_CHIRP)
 cg = np.sum(w) / SAMPLES_PER_CHIRP
-FS_PEAK = 2**(ADC_BITS - 1)
+FS_PEAK = ADC_CENTER
 
 freq_hz = np.fft.rfftfreq(SAMPLES_PER_CHIRP, d=1.0 / FS)
 freq_khz = freq_hz / 1e3
@@ -167,52 +202,93 @@ if HZ_PER_M > 0:
 else:
     range_m = np.arange(len(freq_hz), dtype=np.float32)
 
+range_mask = range_m <= MAX_RANGE_TO_SHOW
+range_m_plot = range_m[range_mask]
+
 spectra = np.empty((num_chirps, len(freq_hz)), dtype=np.float32)
 
 for i in range(num_chirps):
-    x = chirps[i].copy()
+    x = chirps[i]
     x = x - np.mean(x)
+
     xw = x * w
     xw_fs = xw / FS_PEAK
+
     X = np.fft.rfft(xw_fs)
-    mag_dbfs = 20 * np.log10((np.abs(X) / (SAMPLES_PER_CHIRP * cg / 2)) + 1e-20)
-    mag_dbfs[:5] = np.min(mag_dbfs)   # suppress DC / leakage bins
+
+    mag_dbfs = 20.0 * np.log10(
+        (np.abs(X) / (SAMPLES_PER_CHIRP * cg / 2.0)) + 1e-20
+    )
+
+    mag_dbfs[:5] = np.min(mag_dbfs)
     spectra[i] = mag_dbfs
+
 
 # -----------------------------
 # Averaged FFT
 # -----------------------------
-N_AVG = min(AVG_CHIRPS, num_chirps)
+N_AVG = min(CHIRPS_PER_CPI, num_chirps)
 avg_mag_dbfs = np.mean(spectra[:N_AVG], axis=0)
 
+# -----------------------------
+# Average noise floor
+# -----------------------------
+avg_limited = avg_mag_dbfs[range_mask]
+
+# remove strongest peaks for cleaner floor estimate
+sorted_mag = np.sort(avg_limited)
+
+# ignore top 5% bins
+noise_bins = sorted_mag[:int(len(sorted_mag) * 0.95)]
+
+AVG_NOISE_FLOOR_DBFS = np.mean(noise_bins)
+
+print(f"\nAVERAGE NOISE FLOOR : {AVG_NOISE_FLOOR_DBFS:.2f} dBFS/bin")
+
 print("\nTop peaks from averaged FFT:")
-peak_indices = np.argsort(avg_mag_dbfs)[-10:][::-1]
+avg_limited = avg_mag_dbfs[range_mask]
+range_limited = range_m[range_mask]
+freq_limited = freq_khz[range_mask]
+
+peak_indices = np.argsort(avg_limited)[-10:][::-1]
+
 for k in peak_indices:
-    print(f"bin={k:4d}  freq={freq_khz[k]:10.2f} kHz  range={range_m[k]:8.2f} m  mag={avg_mag_dbfs[k]:7.2f} dBFS")
+    print(
+        f"freq={freq_limited[k]:10.2f} kHz  "
+        f"range={range_limited[k]:8.2f} m  "
+        f"mag={avg_limited[k]:7.2f} dBFS"
+    )
+
 
 # -----------------------------
-# Animation first, finite only
+# Animation
 # -----------------------------
 plt.ion()
+
 fig_anim, ax_anim = plt.subplots(figsize=(10, 5))
-line, = ax_anim.plot(range_m, spectra[0])
+
+spectra_plot = spectra[:, range_mask]
+
+line, = ax_anim.plot(range_m_plot, spectra_plot[0])
+
 ax_anim.set_xlabel("Range (m)")
 ax_anim.set_ylabel("Magnitude (dBFS)")
 ax_anim.set_title("Range Profile - Chirp 0")
 ax_anim.grid(True)
-ax_anim.set_xlim(0, min(MAX_RANGE_TO_SHOW, np.max(range_m)))
 
-global_ymax = np.max(spectra)
+ax_anim.set_xlim(0, MAX_RANGE_TO_SHOW)
+
+global_ymax = np.max(spectra_plot)
 ax_anim.set_ylim(global_ymax - 80, global_ymax + 5)
+
 fig_anim.tight_layout()
 fig_anim.show()
 
 for i in range(0, num_chirps, DISPLAY_STEP):
-    line.set_ydata(spectra[i])
+    line.set_ydata(spectra_plot[i])
     ax_anim.set_title(f"Range Profile - Chirp {i}")
     fig_anim.canvas.draw_idle()
     plt.pause(0.001)
 
-# leave the last displayed chirp on screen and stop updating
-#plt.ioff()
-
+plt.ioff()
+plt.show()

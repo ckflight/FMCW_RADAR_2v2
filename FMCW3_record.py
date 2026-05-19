@@ -43,7 +43,7 @@ DATA_LOG         = 0
 ADC_SELECT       = 0
 PA_MODE          = 0 # 1 on off, 0 on during chirp
 FIR_ENABLE       = 0
-SEND_DATA_TYPE   = 1 # 1 adc, 0 test data
+SEND_DATA_TYPE   = 0 # 1 adc, 0 test data
 ADC_RESOLUTION   = 16
 SAMPLE_AVERAGING = 1
 
