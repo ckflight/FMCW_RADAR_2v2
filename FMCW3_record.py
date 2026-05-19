@@ -21,7 +21,7 @@ TEST_MUX         = 0 # 1 generate a test mux to test project, 0 adf4158 generate
 
 # ADF4158 Setting
 if TEST_MUX == 0:
-    SWEEP_TIME = 250e-6
+    SWEEP_TIME = 500e-6
     SWEEP_GAP  = 10e-6
 
 # Test mux settings
@@ -35,7 +35,7 @@ SAMPLING_FREQUENCY = 2_000_000
 NUMBER_OF_SAMPLES  = int(SAMPLING_FREQUENCY * SWEEP_TIME)
 
 SWEEP_START = 5.20e9
-SWEEP_BW    = 900e6
+SWEEP_BW    = 800e6
 
 GAIN             = 10
 SWEEP_TYPE       = 0
@@ -43,7 +43,7 @@ DATA_LOG         = 0
 ADC_SELECT       = 0
 PA_MODE          = 0 # 1 on off, 0 on during chirp
 FIR_ENABLE       = 0
-SEND_DATA_TYPE   = 0 # 1 adc, 0 test data
+SEND_DATA_TYPE   = 1 # 1 adc, 0 test data
 ADC_RESOLUTION   = 16
 SAMPLE_AVERAGING = 1
 
