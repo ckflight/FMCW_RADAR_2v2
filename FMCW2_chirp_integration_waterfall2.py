@@ -18,7 +18,7 @@ elif OPERATING_SYSTEM == 2:
     BIN_FILE = r"C:\Users\CK\Desktop\flight_log.bin"
 
 INFO_SECTOR_SIZE        = 512
-MAX_RANGE_DISPLAY       = 350 # range upper plot limit in meters 
+MAX_RANGE_DISPLAY       = 150 # range upper plot limit in meters 
 
 def read_u32_be(buf, offset):
     return ((buf[offset] << 24) |
@@ -288,12 +288,26 @@ for cpi_idx in range(CPI_COUNTER):
     # Add to waterfall array
     waterfall[cpi_idx, :] = avg_range
 
-
     # --- update 1D plot ---
+    
     line.set_data(range_m, avg_range)
     ax1.set_xlim(0, MAX_RANGE_DISPLAY)
     ax1.set_ylim(np.min(avg_range), np.max(avg_range) * 1.1)
     ax1.set_title(f"Range Profile - CPI {cpi_idx+1}/{CPI_COUNTER}")
+
+    #----------
+
+    #line.set_data(range_m_limited, avg_range[range_mask])
+    #ax1.set_xlim(0, MAX_RANGE_DISPLAY)
+    
+    #visible_avg = avg_range[range_mask]
+
+    #y_low  = np.percentile(visible_avg, 5)
+    #y_high = np.percentile(visible_avg, 98)
+
+    #ax1.set_ylim(y_low, y_high * 1.5)
+
+    #----------
 
     # --- update waterfall ---
     waterfall_db = 10 * np.log10(waterfall + 1e-12)

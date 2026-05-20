@@ -4,14 +4,14 @@ import matplotlib.pyplot as plt
 OPERATING_SYSTEM = 1   # 1 = Ubuntu/Linux, 2 = Windows
 
 if OPERATING_SYSTEM == 1:
-    BIN_FILE = "/home/ck/Desktop//fmcw2_bin_files/10bit_64_sync_corridore_run_tx3db_rx6db.bin"
+    BIN_FILE = "/home/ck/Desktop/flight_log.bin"
 elif OPERATING_SYSTEM == 2:
     BIN_FILE = r"C:\Users\CK\Desktop\flight_log.bin"
 
 INFO_SECTOR_SIZE  = 512
-MAX_RANGE_DISPLAY = 70 # if > abs max distance then abs max is displayed.
+MAX_RANGE_DISPLAY = 350 # if > abs max distance then abs max is displayed.
 
-NOISE_RANGE_MIN = 20
+NOISE_RANGE_MIN = 0
 NOISE_RANGE_MAX = MAX_RANGE_DISPLAY
 
 
