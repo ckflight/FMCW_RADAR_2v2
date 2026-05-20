@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 OPERATING_SYSTEM = 1   # 1 = Ubuntu/Linux, 2 = Windows
 
 if OPERATING_SYSTEM == 1:
-    BIN_FILE = "/home/ck/Desktop/fmcw2_bin_files/16bit_dbfs_128chirp.bin"
+    BIN_FILE = "/home/ck/Desktop/flight_log.bin"
 elif OPERATING_SYSTEM == 2:
     BIN_FILE = r"C:\Users\CK\Desktop\flight_log.bin"
 
@@ -98,20 +98,9 @@ print(f"NUM_CHIRPS        : {num_chirps}")
 
 # -----------------------------
 # Read ADC samples
-# STM32 ADC DMA stores 10/12/14/16-bit samples inside uint16_t
-# File data is little-endian uint16_t
-# -----------------------------
-expected_samples = num_chirps * SAMPLES_PER_CHIRP
-expected_bytes = expected_samples * 2
+raw_data = file_bytes[INFO_SECTOR_SIZE:]
 
-raw_data = file_bytes[INFO_SECTOR_SIZE : INFO_SECTOR_SIZE + expected_bytes]
-
-if len(raw_data) < expected_bytes:
-    raise ValueError(
-        f"Not enough raw bytes: got {len(raw_data)}, expected {expected_bytes}"
-    )
-
-adc_u16 = np.frombuffer(raw_data, dtype="<u2", count=expected_samples)
+adc_u16 = np.frombuffer(raw_data, dtype="<u2")
 
 
 # -----------------------------
@@ -122,7 +111,31 @@ ADC_MASK = (1 << ADC_BITS) - 1
 ADC_FULL_SCALE = float(1 << ADC_BITS)
 ADC_CENTER = float(1 << (ADC_BITS - 1))
 
-adc_raw = adc_u16 & ADC_MASK
+SYNC = 0xC8C8
+
+chirps = []
+
+sync_idx = np.where(adc_u16[:-1] == SYNC)[0]
+
+for i in sync_idx:
+
+    if adc_u16[i + 1] == SYNC:
+
+        chirp = adc_u16[i + 2 : i + 2 + SAMPLES_PER_CHIRP]
+
+        if len(chirp) == SAMPLES_PER_CHIRP:
+            chirps.append(chirp)
+
+        i += SAMPLES_PER_CHIRP + 2
+
+    else:
+        i += 1
+
+chirps = np.array(chirps)
+
+num_chirps = len(chirps)
+
+adc_raw = chirps & ADC_MASK
 adc_centered = adc_raw.astype(np.float32) - ADC_CENTER
 
 # Normalized ADC value, approximately -1.0 to +1.0
@@ -140,13 +153,6 @@ print(f"Centered min  : {adc_centered.min():.1f}")
 print(f"Centered max  : {adc_centered.max():.1f}")
 print(f"Centered mean : {adc_centered.mean():.2f}")
 print(f"Peak dBFS     : {adc_dbfs.max():.2f} dBFS")
-
-
-# -----------------------------
-# Reshape into chirps
-# -----------------------------
-chirps = adc_centered.reshape(num_chirps, SAMPLES_PER_CHIRP)
-chirps_norm = adc_norm.reshape(num_chirps, SAMPLES_PER_CHIRP)
 
 
 # -----------------------------

@@ -4,12 +4,12 @@ import matplotlib.pyplot as plt
 OPERATING_SYSTEM = 1   # 1 = Ubuntu/Linux, 2 = Windows
 
 if OPERATING_SYSTEM == 1:
-    BIN_FILE = "/home/ck/Desktop/fmcw2_bin_files/10bit_dbfs_64chirp.bin"
+    BIN_FILE = "/home/ck/Desktop/flight_log.bin"
 elif OPERATING_SYSTEM == 2:
     BIN_FILE = r"C:\Users\CK\Desktop\flight_log.bin"
 
 INFO_SECTOR_SIZE  = 512
-MAX_RANGE_DISPLAY = 500
+MAX_RANGE_DISPLAY = 100
 
 NOISE_RANGE_MIN = 20
 NOISE_RANGE_MAX = MAX_RANGE_DISPLAY
@@ -157,34 +157,50 @@ print(f"WRITE_SPEED         : {CARD_WRITE_SPEED_MBPS:.2f} MB/s")
 # -----------------------------
 # Read ADC data
 # -----------------------------
-raw_data = file_bytes[INFO_SECTOR_SIZE : INFO_SECTOR_SIZE + expected_bytes]
+# -----------------------------
+# Read ADC data
+# -----------------------------
+raw_data = file_bytes[INFO_SECTOR_SIZE:]
 
 data_u16 = np.frombuffer(raw_data, dtype="<u2")
 
-if len(data_u16) < expected_samples:
-    raise ValueError(
-        f"Not enough ADC data: got {len(data_u16)} samples, expected {expected_samples}"
-    )
+SYNC = 0xC8C8
 
-data_u16 = data_u16[:expected_samples]
+sync_idx = np.where(data_u16[:-1] == SYNC)[0]
+
+chirps = []
+
+for i in sync_idx:
+
+    if data_u16[i + 1] == SYNC:
+
+        chirp = data_u16[i + 2 : i + 2 + SAMPLES_PER_CHIRP]
+
+        if len(chirp) == SAMPLES_PER_CHIRP:
+            chirps.append(chirp)
+
+chirps = np.array(chirps)
+
+num_chirps = len(chirps)
+
+print(f"SYNCED CHIRPS      : {num_chirps}")
 
 # Keep only valid ADC bits
 ADC_MASK = (1 << ADC_BITS) - 1
-data_u16 = data_u16 & ADC_MASK
+
+chirps = chirps & ADC_MASK
 
 print("\n----- RAW ADC CHECK -----")
-print(f"Raw min             : {int(data_u16.min())}")
-print(f"Raw max             : {int(data_u16.max())}")
-print(f"Raw mean            : {float(data_u16.mean()):.2f}")
+print(f"Raw min             : {int(chirps.min())}")
+print(f"Raw max             : {int(chirps.max())}")
+print(f"Raw mean            : {float(chirps.mean()):.2f}")
 
 # Unsigned ADC -> centered signed-like float
-ADC_FULL_SCALE = 1 << ADC_BITS
 ADC_CENTER = 1 << (ADC_BITS - 1)
 
 FS_PEAK = ADC_CENTER
 
-data_adc = data_u16.astype(np.float32) - ADC_CENTER
-chirps = data_adc.reshape(num_chirps, SAMPLES_PER_CHIRP)
+chirps = chirps.astype(np.float32) - ADC_CENTER
 
 
 # -----------------------------
@@ -216,7 +232,7 @@ cg = np.sum(w) / SAMPLES_PER_CHIRP
 # -----------------------------
 # Plot setup
 # -----------------------------
-waterfall = np.full((CPI_COUNTER, len(range_m)), -160.0, dtype=np.float32)
+waterfall = np.full((num_chirps // CHIRPS_PER_CPI, len(range_m)), -160.0, dtype=np.float32)
 
 plt.ion()
 fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(10, 10))

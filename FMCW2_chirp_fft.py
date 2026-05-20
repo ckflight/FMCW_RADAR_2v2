@@ -4,13 +4,13 @@ import matplotlib.pyplot as plt
 OPERATING_SYSTEM = 1   # 1 = Ubuntu/Linux, 2 = Windows
 
 if OPERATING_SYSTEM == 1:
-    BIN_FILE = "/home/ck/Desktop/fmcw2_bin_files/10bit_dbfs_64chirp.bin"
+    BIN_FILE = "/home/ck/Desktop/flight_log.bin"
 else:
     BIN_FILE = r"C:\Users\CK\Desktop\flight_log.bin"
 
 INFO_SECTOR_SIZE  = 512
-DISPLAY_STEP      = 1
-MAX_RANGE_TO_SHOW = 300   # meters, change this value
+DISPLAY_STEP      = 20
+MAX_RANGE_TO_SHOW = 50   # meters, change this value
 
 
 def read_u32_be(buf, offset):
@@ -165,7 +165,33 @@ if len(raw_data) < NUM_OF_BYTES_LOGGED:
         f"Not enough data bytes: got {len(raw_data)}, expected {NUM_OF_BYTES_LOGGED}"
     )
 
-adc_u16 = np.frombuffer(raw_data, dtype="<u2", count=num_chirps * SAMPLES_PER_CHIRP)
+adc_u16 = np.frombuffer(raw_data, dtype="<u2")
+
+SYNC = 0xC8C8
+
+chirps = []
+
+sync_idx = np.where(adc_u16[:-1] == SYNC)[0]
+
+for i in sync_idx:
+
+    if adc_u16[i + 1] == SYNC:
+
+        chirp = adc_u16[i + 2 : i + 2 + SAMPLES_PER_CHIRP]
+
+        if len(chirp) == SAMPLES_PER_CHIRP:
+            chirps.append(chirp)
+
+        i += SAMPLES_PER_CHIRP + 2
+
+    else:
+        i += 1
+
+chirps = np.array(chirps)
+
+num_chirps = len(chirps)
+
+print(f"SYNCED CHIRPS : {num_chirps}")
 
 
 # -----------------------------
@@ -174,10 +200,10 @@ adc_u16 = np.frombuffer(raw_data, dtype="<u2", count=num_chirps * SAMPLES_PER_CH
 ADC_MASK = (1 << ADC_BITS) - 1
 ADC_CENTER = float(1 << (ADC_BITS - 1))
 
-adc_raw = adc_u16 & ADC_MASK
-adc_centered = adc_raw.astype(np.float32) - ADC_CENTER
+adc_raw = chirps & ADC_MASK
+adc_centered = chirps.astype(np.float32) - ADC_CENTER
 
-chirps = adc_centered.reshape(num_chirps, SAMPLES_PER_CHIRP)
+chirps = adc_centered
 
 print("\n----- ADC CHECK -----")
 print(f"Raw min       : {adc_raw.min()}")
