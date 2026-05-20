@@ -4,12 +4,12 @@ import matplotlib.pyplot as plt
 OPERATING_SYSTEM = 1   # 1 = Ubuntu/Linux, 2 = Windows
 
 if OPERATING_SYSTEM == 1:
-    BIN_FILE = "/home/ck/Desktop/flight_log.bin"
+    BIN_FILE = "/home/ck/Desktop//fmcw2_bin_files/10bit_64_sync_corridore_run_tx3db_rx6db.bin"
 elif OPERATING_SYSTEM == 2:
     BIN_FILE = r"C:\Users\CK\Desktop\flight_log.bin"
 
 INFO_SECTOR_SIZE  = 512
-MAX_RANGE_DISPLAY = 100
+MAX_RANGE_DISPLAY = 70 # if > abs max distance then abs max is displayed.
 
 NOISE_RANGE_MIN = 20
 NOISE_RANGE_MAX = MAX_RANGE_DISPLAY
@@ -325,8 +325,9 @@ for cpi_idx in range(CPI_COUNTER):
 
     waterfall[cpi_idx, :] = avg_range_dbfs
 
-    # Range-Doppler
+    # Range-Doppler    
     doppler_fft = np.fft.fft(chirps_fft, axis=0)
+
     doppler_fft = np.fft.fftshift(doppler_fft, axes=0)
     rd_map_dbfs = 20 * np.log10(np.abs(doppler_fft) + 1e-30)
     rd_map_limited = rd_map_dbfs[:, range_mask]
@@ -341,7 +342,9 @@ for cpi_idx in range(CPI_COUNTER):
     line.set_data(range_m_limited, avg_range_limited)
 
     ymax = np.max(avg_range_limited)
-    ax1.set_ylim(ymax - 80, ymax + 5)
+    noise = noise_floor_dbfs
+
+    ax1.set_ylim(noise - 10, ymax + 5)
 
     ax1.set_title(
         f"Chirp Integrated Range Profile - CPI {cpi_idx + 1}/{CPI_COUNTER} "
@@ -351,16 +354,16 @@ for cpi_idx in range(CPI_COUNTER):
     # Update waterfall
     waterfall_limited = waterfall[:, range_mask]
     img.set_data(waterfall_limited)
-    img.set_clim(np.max(waterfall_limited) - 40, np.max(waterfall_limited))
+    img.set_clim(np.max(waterfall_limited) - 35, np.max(waterfall_limited))
 
     # Update range-Doppler
     img_rd.set_data(rd_map_limited)
-    img_rd.set_clim(np.max(rd_map_limited) - 50, np.max(rd_map_limited))
+    img_rd.set_clim(np.max(rd_map_limited) - 40, np.max(rd_map_limited))
 
     ax3.set_title(f"Range-Doppler Map - CPI {cpi_idx + 1}/{CPI_COUNTER}")
 
     fig.canvas.draw_idle()
-    plt.pause(0.04)
+    plt.pause(0.01)
 
 plt.ioff()
 plt.show()

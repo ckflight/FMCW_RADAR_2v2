@@ -10,7 +10,7 @@ import binascii
 from datetime import datetime
 
 ADC_SELECT          = 0             # 0 for ADC DMA, 1 for External ADC MAX1426
-RECORD_TIME         = 10             # in sec
+RECORD_TIME         = 5             # in sec
 TEST_DEVICE         = 1             # 0 STM32F4, 1 STM32H7, 2 FPGA
 OPERATING_SYSTEM    = 1             # 0 MAC, 1 UBUNTU, 2 WINDOWS (Havent implemented serial on windows.)
 
@@ -25,7 +25,7 @@ CPI_CHIRP           = 64            # 1 for USB, 32 for 1ms SWEEP_TIME, 64 for 5
 ADC_RESOLUTION      = 10            # 10, 12, 14, 16
 SAMPLE_AVERAGING    = 1             # 1, 2, 4, 8, 16
 
-TX_MODE             = 0             # 0 for continuous tx, 1 for on off with tx, 2 for testing when tx off
+TX_MODE             = 2             # 0 for continuous tx, 1 for on off with tx, 2 for testing when tx off
 SWEEP_TYPE          = 0             # 0 for Sawtooth, 1 for Triangular
 USE_PLL             = 1             # 0 for DAC, 1 for PLL
 

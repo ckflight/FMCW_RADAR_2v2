@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 OPERATING_SYSTEM = 1   # 1 = Ubuntu/Linux, 2 = Windows
 
 if OPERATING_SYSTEM == 1:
-    BIN_FILE = "/home/ck/Desktop/flight_log.bin"
+    BIN_FILE = "/home/ck/Desktop//fmcw2_bin_files/10bit_64_sync_salon_no_movement_for_phase_tx3db_rx6db.bin"
 elif OPERATING_SYSTEM == 2:
     BIN_FILE = r"C:\Users\CK\Desktop\flight_log.bin"
 
@@ -74,9 +74,6 @@ CARD_WRITE_END_TIMER_US = read_u32_be(info, idx); idx += 4
 CHIRPS_PER_CPI          = read_u16_be(info, idx); idx += 2
 CPI_COUNTER             = read_u32_be(info, idx); idx += 4
 
-# keep your override
-SAMPLES_PER_CHIRP = 900
-
 # -----------------------------
 # Reconstruct user-friendly values
 # -----------------------------
@@ -113,21 +110,39 @@ print(f"CPI_RATE            : {CPI_RATE_HZ:.2f} Hz")
 print(f"CPI_COUNTER         : {CPI_COUNTER}")
 
 # -----------------------------
-# Read ADC data
+# Read ADC data with sync
 # -----------------------------
-data = np.frombuffer(raw_data, dtype='<u2')
+data_u16 = np.frombuffer(raw_data, dtype="<u2")
 
-num_chirps = CPI_COUNTER * CHIRPS_PER_CPI
-data = data[:num_chirps * SAMPLES_PER_CHIRP]
-chirps = data.reshape(num_chirps, SAMPLES_PER_CHIRP)
+SYNC = 0xC8C8
+
+sync_idx = np.where(data_u16[:-1] == SYNC)[0]
+
+chirps = []
+
+for i in sync_idx:
+
+    if data_u16[i + 1] == SYNC:
+
+        chirp = data_u16[i + 2 : i + 2 + SAMPLES_PER_CHIRP]
+
+        if len(chirp) == SAMPLES_PER_CHIRP:
+            chirps.append(chirp)
+
+chirps = np.array(chirps)
+
+num_chirps = len(chirps)
 
 print("\n----- DATA -----")
-print("Total samples :", len(data))
+print("Total samples :", len(data_u16))
 print("Num chirps    :", num_chirps)
 print("Samples/chirp :", SAMPLES_PER_CHIRP)
 
-# unsigned ADC -> centered float
-chirps = chirps.astype(np.float32) - 32768.0
+ADC_MASK = (1 << ADC_BITS) - 1
+ADC_CENTER = float(1 << (ADC_BITS - 1))
+
+chirps = chirps & ADC_MASK
+chirps = chirps.astype(np.float32) - ADC_CENTER
 
 # -----------------------------
 # keep only full CPIs

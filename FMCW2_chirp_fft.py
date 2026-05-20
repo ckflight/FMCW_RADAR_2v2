@@ -4,13 +4,13 @@ import matplotlib.pyplot as plt
 OPERATING_SYSTEM = 1   # 1 = Ubuntu/Linux, 2 = Windows
 
 if OPERATING_SYSTEM == 1:
-    BIN_FILE = "/home/ck/Desktop/flight_log.bin"
+    BIN_FILE = "/home/ck/Desktop//fmcw2_bin_files/10bit_64_sync_corridore_run_tx3db_rx6db.bin"
 else:
     BIN_FILE = r"C:\Users\CK\Desktop\flight_log.bin"
 
 INFO_SECTOR_SIZE  = 512
-DISPLAY_STEP      = 20
-MAX_RANGE_TO_SHOW = 50   # meters, change this value
+DISPLAY_STEP      = 30
+MAX_RANGE_TO_SHOW = 110   # meters, change this value
 
 
 def read_u32_be(buf, offset):
@@ -291,21 +291,28 @@ for k in peak_indices:
 # -----------------------------
 plt.ion()
 
-fig_anim, ax_anim = plt.subplots(figsize=(10, 5))
+fig_anim, (ax_anim, ax_noise) = plt.subplots(2, 1, figsize=(10, 8))
 
 spectra_plot = spectra[:, range_mask]
 
 line, = ax_anim.plot(range_m_plot, spectra_plot[0])
-
 ax_anim.set_xlabel("Range (m)")
 ax_anim.set_ylabel("Magnitude (dBFS)")
-ax_anim.set_title("Range Profile - Chirp 0")
 ax_anim.grid(True)
-
 ax_anim.set_xlim(0, MAX_RANGE_TO_SHOW)
 
 global_ymax = np.max(spectra_plot)
 ax_anim.set_ylim(global_ymax - 80, global_ymax + 5)
+
+noise_floor_per_chirp = np.median(spectra_plot, axis=1)
+
+noise_line, = ax_noise.plot([], [])
+ax_noise.set_xlabel("Chirp index")
+ax_noise.set_ylabel("Noise floor (dBFS/bin)")
+ax_noise.grid(True)
+ax_noise.set_xlim(0, num_chirps)
+ax_noise.set_ylim(np.min(noise_floor_per_chirp) - 5,
+                  np.max(noise_floor_per_chirp) + 5)
 
 fig_anim.tight_layout()
 fig_anim.show()
@@ -313,8 +320,12 @@ fig_anim.show()
 for i in range(0, num_chirps, DISPLAY_STEP):
     line.set_ydata(spectra_plot[i])
     ax_anim.set_title(f"Range Profile - Chirp {i}")
+
+    noise_line.set_data(
+        np.arange(0, i + 1, DISPLAY_STEP),
+        noise_floor_per_chirp[0:i + 1:DISPLAY_STEP]
+    )
+    ax_noise.set_title(f"Noise Floor - Chirp {i}")
+
     fig_anim.canvas.draw_idle()
     plt.pause(0.001)
-
-plt.ioff()
-plt.show()
