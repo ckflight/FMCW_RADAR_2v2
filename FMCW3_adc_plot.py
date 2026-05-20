@@ -10,10 +10,10 @@ FILENAME = "record.bin"
 
 START_CHIRP = 0
 END_CHIRP = None
-CHIRP_STEP = 50
+CHIRP_STEP = 100
 FRAME_DELAY = 0.001
 
-REMOVE_DC = True
+REMOVE_DC = False
 USE_WINDOW = True
 
 # ---------------------------------------------------------
@@ -26,7 +26,7 @@ USE_WINDOW = True
 #         (FIR enabled / sign extended)
 # ---------------------------------------------------------
 
-FIR_ENABLED = False
+FIR_ENABLED = True
 
 # =========================================================
 
@@ -93,7 +93,7 @@ def decode_adc(chirp_bytes):
     # -----------------------------------------------------
     else:
 
-        raw = np.frombuffer(chirp_bytes, dtype=">u2").astype(np.int32)
+        raw = np.frombuffer(chirp_bytes, dtype=">i2").astype(np.int32)
 
         # keep lower 12 bits
         raw = raw & 0x0FFF
@@ -101,8 +101,8 @@ def decode_adc(chirp_bytes):
         # manual 12-bit sign extension
         raw[raw >= ADC_FS] -= 2 ** ADC_BITS
 
-    adc_a = raw[0::2]
-    adc_b = raw[1::2]
+    adc_a = raw[1::2]
+    adc_b = raw[0::2]
 
     return adc_a, adc_b
 
