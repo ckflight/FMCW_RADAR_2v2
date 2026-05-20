@@ -1,0 +1,317 @@
+import numpy as np
+import matplotlib.pyplot as plt
+
+# This code takes whole 500 Megabyte .bin file
+# Takes recorded amount of bytes to an array to raw_data
+# After interpretting array as 16 bit 2 byte data is one sample
+# Creates chirps x samples array for record
+# 1. With a for loop creates 2D array for 128 chirps x adc samples and takes fft of this 2D array
+# 2. Sums these FFT of 128 chirp x samples array and creates 1D array and plots it. SNR improvement is remarkable!!
+# 3. Also adds this sum array to a waterfall array for plotting
+# 4. Creates range doppler map by taking FFT over columns of the array generated from FFT of 2D array for 128 chirps x adc samples
+
+OPERATING_SYSTEM = 1   # 1 = Ubuntu/Linux, 2 = Windows
+
+if OPERATING_SYSTEM == 1:
+    BIN_FILE = "/home/ck/Desktop/flight_log.bin"
+elif OPERATING_SYSTEM == 2:
+    BIN_FILE = r"C:\Users\CK\Desktop\flight_log.bin"
+
+INFO_SECTOR_SIZE        = 512
+MAX_RANGE_DISPLAY       = 350 # range upper plot limit in meters 
+
+def read_u32_be(buf, offset):
+    return ((buf[offset] << 24) |
+            (buf[offset + 1] << 16) |
+            (buf[offset + 2] << 8) |
+            (buf[offset + 3]))
+
+def read_u16_be(buf, offset):
+    return ((buf[offset] << 8) |
+            (buf[offset + 1]))
+
+
+# -----------------------------
+# Read the whole .bin file once first 512 byte is info, rest is data
+# -----------------------------
+with open(BIN_FILE, "rb") as f:
+    file_bytes = f.read()
+
+if len(file_bytes) < INFO_SECTOR_SIZE:
+    raise ValueError("File is smaller than 512-byte info sector")
+
+info = file_bytes[:INFO_SECTOR_SIZE]
+
+# -----------------------------
+# Decode info sector
+# -----------------------------
+idx = 0
+
+RECORD_COUNTER     = read_u32_be(info, idx); idx += 4
+RECORD_TIME        = read_u32_be(info, idx); idx += 4
+SWEEP_TIME_US      = read_u32_be(info, idx); idx += 4
+SWEEP_GAP_US       = read_u32_be(info, idx); idx += 4
+SWEEP_START_SCALED = read_u32_be(info, idx); idx += 4
+SWEEP_BW_SCALED    = read_u32_be(info, idx); idx += 4
+FS_KHZ             = read_u32_be(info, idx); idx += 4
+SAMPLES_PER_CHIRP  = read_u32_be(info, idx); idx += 4
+
+TX_MODE            = info[idx]; idx += 1
+TX_POWER_DBM       = info[idx]; idx += 1
+TX_POWER_DBM_VOLT  = info[idx]; idx += 1
+
+HZ_PER_M           = read_u32_be(info, idx); idx += 4
+
+DATA_LOG           = info[idx]; idx += 1
+ADC_SELECT         = info[idx]; idx += 1
+USB_DATA_TYPE      = info[idx]; idx += 1
+ADC_BITS           = info[idx]; idx += 1
+
+CHIRP_END_TIMER_US      = read_u32_be(info, idx); idx += 4
+CPI_END_TIMER_US        = read_u32_be(info, idx); idx += 4
+CARD_WRITE_END_TIMER_US = read_u32_be(info, idx); idx += 4
+
+CHIRPS_PER_CPI          = read_u16_be(info, idx); idx += 2
+CPI_COUNTER             = read_u32_be(info, idx); idx += 4
+
+# This is the amount of byte logged
+NUM_OF_BYTES_LOGGED = int(CPI_COUNTER * CHIRPS_PER_CPI * SAMPLES_PER_CHIRP * (ADC_BITS / 8)) 
+
+# Instead of buffering 500 Megabyte whole .bin file, take amount of byte written.
+raw_data = file_bytes[INFO_SECTOR_SIZE: INFO_SECTOR_SIZE + NUM_OF_BYTES_LOGGED]
+
+# -----------------------------
+# Reconstruct user-friendly values
+# -----------------------------
+FS = FS_KHZ * 1000
+SWEEP_TIME = SWEEP_TIME_US * 1e-6
+SWEEP_GAP = SWEEP_GAP_US * 1e-6
+SWEEP_START = SWEEP_START_SCALED * 1e7
+SWEEP_BW = SWEEP_BW_SCALED * 1e6
+
+# -----------------------------
+# Derived values
+# -----------------------------
+CONFIGURED_PRF_HZ = 0.0
+if (SWEEP_TIME_US + SWEEP_GAP_US) > 0:
+    CONFIGURED_PRF_HZ = 1e6 / (SWEEP_TIME_US + SWEEP_GAP_US)
+
+MEASURED_CHIRP_RATE_HZ = 0.0
+if CHIRP_END_TIMER_US > 0:
+    MEASURED_CHIRP_RATE_HZ = 1e6 / CHIRP_END_TIMER_US
+
+CPI_RATE_HZ = 0.0
+if (CPI_END_TIMER_US + CARD_WRITE_END_TIMER_US) > 0:
+    CPI_RATE_HZ = 1e6 / (CPI_END_TIMER_US + CARD_WRITE_END_TIMER_US)
+
+BYTES_PER_SAMPLE = 2 if USB_DATA_TYPE == 1 else 1
+BYTES_PER_CHIRP = SAMPLES_PER_CHIRP * BYTES_PER_SAMPLE 
+BYTES_PER_CPI = CHIRPS_PER_CPI * BYTES_PER_CHIRP
+
+CONFIGURED_DATA_RATE_MBPS = (BYTES_PER_CHIRP * CONFIGURED_PRF_HZ) / 1e6
+
+CARD_WRITE_SPEED_MBPS = 0.0
+if CARD_WRITE_END_TIMER_US > 0:
+    CARD_WRITE_SPEED_MBPS = BYTES_PER_CPI / CARD_WRITE_END_TIMER_US
+
+APPROX_RECORD_TIME_FROM_COUNTER = 0.0
+if CONFIGURED_PRF_HZ > 0:
+    APPROX_RECORD_TIME_FROM_COUNTER = RECORD_COUNTER / CONFIGURED_PRF_HZ
+
+TOTAL_CPI_TIME_S = (CPI_COUNTER * CPI_END_TIMER_US) / 1e6
+TOTAL_CARD_WRITE_TIME_S = (CPI_COUNTER * CARD_WRITE_END_TIMER_US) / 1e6
+print("\n----- SYSTEM -----")
+print(f"FS                  : {FS/1e6:.2f} MHz")
+print(f"SAMPLES_PER_CHIRP   : {SAMPLES_PER_CHIRP}")
+print(f"HZ_PER_M            : {HZ_PER_M}")
+print(f"TX_POWER            : {TX_POWER_DBM}")
+print(f"TX_VOLT             : {TX_POWER_DBM_VOLT}")
+print(f"SWEEP_START         : {SWEEP_START}")
+print(f"SWEEP_BW            : {SWEEP_BW}")
+
+print("\n----- TIMING -----")
+print(f"SWEEP_TIME          : {SWEEP_TIME_US} us")
+print(f"SWEEP_GAP           : {SWEEP_GAP_US} us")
+print(f"CONFIGURED_PRF      : {CONFIGURED_PRF_HZ:.2f} Hz")
+print(f"MEASURED_CHIRP_RATE : {MEASURED_CHIRP_RATE_HZ:.2f} Hz")
+
+print("\n----- CPI -----")
+print(f"CHIRPS_PER_CPI      : {CHIRPS_PER_CPI}")
+print(f"CPI_RATE            : {CPI_RATE_HZ:.2f} Hz")
+print(f"CPI_COUNTER         : {CPI_COUNTER}")
+
+print("\n----- DATA -----")
+print(f"BYTES_PER_CHIRP     : {BYTES_PER_CHIRP}")
+print(f"DATA_RATE           : {CONFIGURED_DATA_RATE_MBPS:.2f} MB/s")
+
+print("\n----- SD WRITE -----")
+print(f"WRITE_SPEED         : {CARD_WRITE_SPEED_MBPS:.2f} MB/s")
+
+# PROCESSING PART
+# ============================================================
+# FAST VECTORIZED SYNC SEARCH
+# ============================================================
+
+adc_u16 = np.frombuffer(raw_data, dtype='<u2')
+
+SYNC = 0xC8C8
+
+# Find:
+# [SYNC][SYNC]
+sync_idx = np.where(
+    (adc_u16[:-1] == SYNC) &
+    (adc_u16[1:]  == SYNC)
+)[0]
+
+print("\n----- SYNC -----")
+print(f"Found sync headers : {len(sync_idx)}")
+
+# ============================================================
+# EXTRACT CHIRPS
+# ============================================================
+
+chirps = []
+
+for idx in sync_idx:
+
+    start = idx + 2
+    end = start + SAMPLES_PER_CHIRP
+
+    if end <= len(adc_u16):
+
+        chirp = adc_u16[start:end]
+
+        if len(chirp) == SAMPLES_PER_CHIRP:
+            chirps.append(chirp)
+
+chirps_u16 = np.array(chirps, dtype=np.uint16)
+
+num_chirps = len(chirps_u16)
+
+print(f"SYNCED CHIRPS      : {num_chirps}")
+
+if num_chirps == 0:
+    raise ValueError("No synced chirps found")
+
+# ============================================================
+# GENERIC ADC BIT HANDLING
+# ============================================================
+
+ADC_MASK = (1 << ADC_BITS) - 1
+ADC_CENTER = float(1 << (ADC_BITS - 1))
+
+adc_raw = chirps_u16 & ADC_MASK
+
+chirps = adc_raw.astype(np.float32) - ADC_CENTER
+
+# This part takes each cpi as a 2D array so 128 chirps x 930 sample on each row.
+# Then takes fft of this 2D array.
+# And creates sum over 2D array to create 1D array. 128 chirp is averaged and power is calculated. 
+# As a result peaks becomes higher noise reduced.
+
+# for range
+freq_hz = np.fft.rfftfreq(SAMPLES_PER_CHIRP, d=1.0 / FS)
+range_m = freq_hz / HZ_PER_M
+
+# for waterfall
+waterfall = np.zeros((CPI_COUNTER, len(range_m)), dtype=np.float32)
+
+plt.ion()
+fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(10, 10))
+fig.subplots_adjust(hspace=0.35)
+
+# 1 → Chirp integrated FFT Plot
+line, = ax1.plot([], [])
+ax1.set_xlabel("Range")
+ax1.set_ylabel("Power")
+ax1.set_title("Range Profile (CPI)")
+ax1.grid(True)
+
+# 2 → Waterfall Plot
+waterfall = np.zeros((CPI_COUNTER, len(range_m)), dtype=np.float32)
+
+img = ax2.imshow(
+    np.zeros_like(waterfall),
+    aspect='auto',
+    origin='lower',
+    extent=[range_m[0], range_m[-1], 0, CPI_COUNTER]
+)
+ax2.set_xlabel("Range")
+ax2.set_ylabel("CPI index")
+ax2.set_title("Waterfall")
+
+# 3 → Range-Doppler map Plot
+rd_map = np.zeros((CHIRPS_PER_CPI, len(range_m)), dtype=np.float32)
+
+img_rd = ax3.imshow(
+    np.zeros_like(rd_map),
+    aspect='auto',
+    origin='lower'
+)
+ax3.set_xlabel("Range bin")
+ax3.set_ylabel("Doppler bin")
+ax3.set_title("Range-Doppler")
+
+for cpi_idx in range(CPI_COUNTER):
+
+    # Extract one CPI
+    start = cpi_idx * CHIRPS_PER_CPI
+    end   = (cpi_idx + 1) * CHIRPS_PER_CPI
+
+    # 2d array of chirps of each cpi so 128 x 930 array
+    chirps_cpi = chirps[start:end]
+
+    # FFT over each chirp (fast-time) 
+    # 128 x 930 --FFT--> 128 x 446
+    chirps_fft = np.fft.rfft(chirps_cpi, axis=1)
+
+    # Take slow time FFT (on each column) over 2D fast time FFT result array
+    doppler_fft = np.fft.fft(chirps_fft, axis=0) # doppler_fft 2D array has gain of 20log(128) = 42 dB
+
+    doppler_fft = np.fft.fftshift(doppler_fft, axes=0)  # shift doppler for + - velocities
+    rd_map = 20 * np.log10(np.abs(doppler_fft) + 1e-12)
+
+    range_mask = range_m <= MAX_RANGE_DISPLAY
+
+    range_m_limited = range_m[range_mask]
+    rd_map_limited = rd_map[:, range_mask]
+
+    # Non-coherent integration (power averaging)
+    # np.abs(chirps_fft) → amplitude of complex FFT  ---> |z| = sqrt(A² + B²)
+    # Power in signals is proportional to: Power ∝ amplitude² so |z|² is **2 → convert amplitude → power
+    # np.mean(..., axis=0) → average across 128 chirps#
+    avg_range = np.mean(np.abs(chirps_fft)**2, axis=0) # avg_range 1D array has gain of 10log(128) = 21 dB
+
+    #IMPORTANT NOTE: If i take the average of the doppler_fft as do to chirps_fft the gain again becomes 21 dB
+
+
+    # Add to waterfall array
+    waterfall[cpi_idx, :] = avg_range
+
+
+    # --- update 1D plot ---
+    line.set_data(range_m, avg_range)
+    ax1.set_xlim(0, MAX_RANGE_DISPLAY)
+    ax1.set_ylim(np.min(avg_range), np.max(avg_range) * 1.1)
+    ax1.set_title(f"Range Profile - CPI {cpi_idx+1}/{CPI_COUNTER}")
+
+    # --- update waterfall ---
+    waterfall_db = 10 * np.log10(waterfall + 1e-12)
+    img.set_data(waterfall_db)
+
+    # update color scaling so contrast becomes visible
+    img.set_clim(np.max(waterfall_db) - 20, np.max(waterfall_db))
+    ax2.set_xlim(0, MAX_RANGE_DISPLAY)
+    ax2.set_ylim(0, CPI_COUNTER)
+
+
+    # --- update range-doppler ---
+    img_rd.set_data(rd_map_limited)
+    # dynamic scaling
+    img_rd.set_clim(np.max(rd_map) - 30, np.max(rd_map))
+    ax3.set_title(f"Range-Doppler (CPI {cpi_idx+1})")
+
+    fig.canvas.draw_idle()
+    plt.pause(0.01)
+
+
