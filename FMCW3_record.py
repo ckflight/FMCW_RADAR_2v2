@@ -3,25 +3,14 @@ import struct
 import pylibftdi as ftdi
 import numpy as np
 
-TEST_CONFIG_ONLY = 0
-TEST_RADAR       = 1
 
-DEVICE_ID = "FTBJ7TCT"
-
-SYNCFF = 0x40
-SIO_RTS_CTS_HS = (0x1 << 8)
-
-READ_CHUNK_SIZE  = 0x10000
-WRITE_CHUNK_SIZE = 0x10000
-
-RX_IDLE_TIMEOUT = 2.0
-
-tx_start_char = b"C"
-TEST_MUX         = 0 # 1 generate a test mux to test project, 0 adf4158 generated mux
+# 1: Generate muxout signal internally to test
+# 0: ADF4158 Generates mux
+TEST_MUX         = 0 
 
 # ADF4158 Setting
 if TEST_MUX == 0:
-    SWEEP_TIME = 500e-6
+    SWEEP_TIME = 1000e-6
     SWEEP_GAP  = 10e-6
 
 # Test mux settings
@@ -29,28 +18,41 @@ else:
     SWEEP_TIME = 250e-6 # fpga sets this. this number has no affect
     SWEEP_GAP  = 10e-6
 
+USE_LOG_NAME = True # log to the file names as below.
+CURRENT_FIR_HPF_KHZ = "400KHz"
+OUTPUT_FILENAME = CURRENT_FIR_HPF_KHZ + "_400mhz.bin"
+
 RECORD_TIME = 5
 
 SAMPLING_FREQUENCY = 2_000_000
 NUMBER_OF_SAMPLES  = int(SAMPLING_FREQUENCY * SWEEP_TIME)
 
-SWEEP_START = 5.20e9
-SWEEP_BW    = 600e6
+SWEEP_START = 5.30e9
+SWEEP_BW    = 400e6
 
 GAIN             = 10
 SWEEP_TYPE       = 0
 DATA_LOG         = 0
 ADC_SELECT       = 0
 PA_MODE          = 0 # 1 on off, 0 on during chirp
-FIR_ENABLE       = 0
+FIR_ENABLE       = 1
 SEND_DATA_TYPE   = 1 # 1 adc, 0 test data
 ADC_RESOLUTION   = 12
 SAMPLE_AVERAGING = 1
 
 INFO_SECTOR_SIZE = 512
 
+RX_IDLE_TIMEOUT = 2.0 # reception done time
+TX_START_CHAR = b"C" # fpga wait for this character to start transmission. It is for sync with python reception.
 
 def open_ftdi():
+
+    DEVICE_ID = "FTBJ7TCT"
+
+    SYNCFF = 0x40
+    SIO_RTS_CTS_HS = (0x1 << 8)
+    READ_CHUNK_SIZE  = 0x10000
+    WRITE_CHUNK_SIZE = 0x10000
 
     dev = ftdi.Device(
         device_id=DEVICE_ID,
@@ -182,107 +184,89 @@ def build_info_sector():
     return bytes(info)
 
 
-if TEST_CONFIG_ONLY == 1:
 
-    dev = open_ftdi()
+dev = open_ftdi()
 
-    packet = build_packet()
+packet = build_packet()
 
-    print("\nTOTAL BYTES:", len(packet))
-    print("RAW HEX:", packet.hex(" "))
+print("\nTOTAL CONFIG BYTES:", len(packet))
+print("RAW HEX:", packet.hex(" "))
 
-    print("\nSENDING CONFIG...\n")
+print("\nSENDING CONFIG...\n")
 
-    dev.write(packet)
+dev.write(packet)
 
-    time.sleep(1.0)
+time.sleep(1.0)
 
-    dev.close()
+print("SENDING C COMMAND...\n")
 
-    print("DONE")
+dev.write(TX_START_CHAR)
 
+print("RECEIVING DATA...\n")
 
-if TEST_RADAR == 1:
-
-    dev = open_ftdi()
-
-    packet = build_packet()
-
-    print("\nTOTAL CONFIG BYTES:", len(packet))
-    print("RAW HEX:", packet.hex(" "))
-
-    print("\nSENDING CONFIG...\n")
-
-    dev.write(packet)
-
-    time.sleep(1.0)
-
-    print("SENDING C COMMAND...\n")
-
-    dev.write(tx_start_char)
-
-    print("RECEIVING DATA...\n")
-
+if USE_LOG_NAME == True:
+    f = open(OUTPUT_FILENAME, "wb")
+else:
     f = open("record.bin", "wb")
 
-    # Write 512-byte binary info sector first
-    f.write(build_info_sector())
-    f.flush()
+# Write 512-byte binary info sector first
+f.write(build_info_sector())
+f.flush()
 
-    start_time = time.time()
-    last_rx_time = None
-    received_started = False
+start_time = time.time()
+last_rx_time = None
+received_started = False
 
-    try:
+try:
 
-        while True:
+    while True:
 
-            rx = dev.read(1024)
-            now = time.time()
+        rx = dev.read(1024)
+        now = time.time()
 
-            if len(rx) > 0:
+        if len(rx) > 0:
 
-                received_started = True
-                last_rx_time = now
+            received_started = True
+            last_rx_time = now
 
-                f.write(rx)
+            f.write(rx)
 
-                elapsed = now - start_time
-                data_bytes = f.tell() - INFO_SECTOR_SIZE
+            elapsed = now - start_time
+            data_bytes = f.tell() - INFO_SECTOR_SIZE
 
-                if elapsed > 0:
-                    throughput = (data_bytes / elapsed) / (1024 * 1024)
-                else:
-                    throughput = 0.0
-
-                print(
-                    f"RX {len(rx):6d} bytes   "
-                    f"DATA {data_bytes:10d} bytes   "
-                    f"{throughput:6.2f} MB/s"
-                )
-
+            if elapsed > 0:
+                throughput = (data_bytes / elapsed) / (1024 * 1024)
             else:
+                throughput = 0.0
 
-                if received_started and last_rx_time is not None:
-                    if now - last_rx_time >= RX_IDLE_TIMEOUT:
-                        print(
-                            f"\nRX idle for {RX_IDLE_TIMEOUT:.1f} s. "
-                            "Ending reception."
-                        )
-                        break
+            print(
+                f"RX {len(rx):6d} bytes   "
+                f"DATA {data_bytes:10d} bytes   "
+                f"{throughput:6.2f} MB/s"
+            )
 
-                time.sleep(0.001)
+        else:
 
-    except KeyboardInterrupt:
+            if received_started and last_rx_time is not None:
+                if now - last_rx_time >= RX_IDLE_TIMEOUT:
+                    print(
+                        f"\nRX idle for {RX_IDLE_TIMEOUT:.1f} s. "
+                        "Ending reception."
+                    )
+                    break
 
-        print("\nSTOPPED BY USER")
+            time.sleep(0.001)
 
-    total_bytes = f.tell()
-    data_bytes = total_bytes - INFO_SECTOR_SIZE
+except KeyboardInterrupt:
 
-    f.close()
-    dev.close()
+    print("\nSTOPPED BY USER")
 
-    print("\nSAVED: record.bin")
-    print("TOTAL BYTES:", total_bytes)
-    print("DATA BYTES :", data_bytes)
+total_bytes = f.tell()
+data_bytes = total_bytes - INFO_SECTOR_SIZE
+
+f.close()
+dev.close()
+
+print("\nSAVED: record.bin")
+print("TOTAL BYTES:", total_bytes)
+print("DATA BYTES :", data_bytes)

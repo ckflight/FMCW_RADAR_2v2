@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 import struct
 
 # =========================================================
-# USER SETTINGS
+# SETTINGS
 # =========================================================
 
 FILENAME = "record.bin"
@@ -13,19 +13,21 @@ END_CHIRP = None
 CHIRP_STEP = 100
 FRAME_DELAY = 0.001
 
-REMOVE_DC = False
-USE_WINDOW = True
-
-# =========================================================
-
-HEADER = b"\xC8\xC8\xC8\xC8"
 INFO_SECTOR_SIZE = 512
-BYTES_PER_SAMPLE_PAIR = 4
+HEADER = b"\xC8\xC8\xC8\xC8"
 
 ADC_BITS = 12
 ADC_FS = 2 ** (ADC_BITS - 1)
 
+REMOVE_DC = True
+USE_WINDOW = True
+
+BYTES_PER_SAMPLE_PAIR = 4
 C = 3e8
+
+# Noise floor calculation region
+IGNORE_FIRST_BINS = 5
+NOISE_PERCENTILE = 20   # better than mean, avoids target peaks
 
 
 # =========================================================
@@ -83,8 +85,7 @@ def parse_info_sector(info):
 # =========================================================
 
 def decode_adc(chirp_bytes):
-
-    raw = np.frombuffer(chirp_bytes, dtype=">i2").astype(np.int32) # big endian. 12 bit signed adc is resized as 16bit. fir is also 16 bit in out
+    raw = np.frombuffer(chirp_bytes, dtype=">i2").astype(np.int32)
 
     adc_a = raw[0::2]
     adc_b = raw[1::2]
@@ -93,11 +94,10 @@ def decode_adc(chirp_bytes):
 
 
 # =========================================================
-# FFT
+# FFT DBFS
 # =========================================================
 
 def calculate_fft_dbfs(signal, fs):
-
     x = signal.astype(np.float32)
 
     if REMOVE_DC:
@@ -111,15 +111,20 @@ def calculate_fft_dbfs(signal, fs):
         coherent_gain = 1.0
 
     fft_data = np.fft.rfft(x)
-
     freq = np.fft.rfftfreq(len(x), d=1.0 / fs)
 
     mag = np.abs(fft_data)
-    mag = mag / (len(x) * coherent_gain / 2)
+    mag = mag / (len(x) * coherent_gain / 2.0)
 
-    mag_dbfs = 20 * np.log10(mag / ADC_FS + 1e-12)
+    mag_dbfs = 20 * np.log10((mag / ADC_FS) + 1e-15)
 
     return freq, mag_dbfs
+
+
+def estimate_noise_floor_dbfs(mag_dbfs):
+    usable = mag_dbfs[IGNORE_FIRST_BINS:]
+
+    return np.percentile(usable, NOISE_PERCENTILE)
 
 
 # =========================================================
@@ -130,11 +135,9 @@ with open(FILENAME, "rb") as f:
     raw_all = f.read()
 
 info = parse_info_sector(raw_all[:INFO_SECTOR_SIZE])
-
 raw_data = raw_all[INFO_SECTOR_SIZE:]
 
 samples_per_chirp = int(info["NUMBER_OF_SAMPLES"])
-
 fs = float(info["SAMPLING_FREQUENCY"])
 
 slope = float(info["SWEEP_BW"]) / float(info["SWEEP_TIME"])
@@ -191,7 +194,6 @@ chirps = []
 idx = 0
 
 while True:
-
     idx = raw_data.find(HEADER, idx)
 
     if idx < 0:
@@ -215,60 +217,74 @@ if END_CHIRP is None:
 
 print("Valid chirps  :", num_chirps)
 
+
 # =========================================================
 # INITIAL DATA
 # =========================================================
 
-adc_a, adc_b = decode_adc(chirps[0])
+adc_a, adc_b = decode_adc(chirps[START_CHIRP])
 
 freq_a, mag_a = calculate_fft_dbfs(adc_a, fs)
 freq_b, mag_b = calculate_fft_dbfs(adc_b, fs)
 
-range_a = freq_a * C / (2 * slope)
-range_b = freq_b * C / (2 * slope)
+range_m = freq_a * C / (2.0 * slope)
 
-x_sample = np.arange(samples_per_chirp)
+noise_a = estimate_noise_floor_dbfs(mag_a)
+noise_b = estimate_noise_floor_dbfs(mag_b)
+
+noise_hist_a = []
+noise_hist_b = []
+chirp_hist = []
+
 
 # =========================================================
 # PLOTS
 # =========================================================
 
-fig, axes = plt.subplots(4, 1, figsize=(12, 10))
+fig, axes = plt.subplots(3, 1, figsize=(12, 9))
 
-ax_a_time = axes[0]
-ax_b_time = axes[1]
-ax_a_fft = axes[2]
-ax_b_fft = axes[3]
+ax_fft_a = axes[0]
+ax_fft_b = axes[1]
+ax_noise = axes[2]
 
-line_a_time, = ax_a_time.plot(x_sample, adc_a)
-line_b_time, = ax_b_time.plot(x_sample, adc_b)
+line_fft_a, = ax_fft_a.plot(range_m, mag_a)
+line_fft_b, = ax_fft_b.plot(range_m, mag_b)
 
-line_a_fft, = ax_a_fft.plot(range_a, mag_a)
-line_b_fft, = ax_b_fft.plot(range_b, mag_b)
+line_noise_a, = ax_noise.plot([], [], label="ADC A Noise Floor")
+line_noise_b, = ax_noise.plot([], [], label="ADC B Noise Floor")
 
-ax_a_time.set_title("ADC A Time Domain")
-ax_b_time.set_title("ADC B Time Domain")
+ax_fft_a.set_title("ADC A FFT dBFS")
+ax_fft_b.set_title("ADC B FFT dBFS")
+ax_noise.set_title("Noise Floor vs Chirp")
 
-ax_a_fft.set_title("ADC A FFT")
-ax_b_fft.set_title("ADC B FFT")
+ax_fft_a.set_ylabel("dBFS/bin")
+ax_fft_b.set_ylabel("dBFS/bin")
+ax_noise.set_ylabel("Noise Floor dBFS/bin")
+ax_noise.set_xlabel("Chirp Index")
 
-ax_a_time.set_ylabel("ADC Code")
-ax_b_time.set_ylabel("ADC Code")
+ax_fft_b.set_xlabel("Range (m)")
 
-ax_a_fft.set_ylabel("dBFS")
-ax_b_fft.set_ylabel("dBFS")
+ax_fft_a.set_xlim(0, range_m.max())
+ax_fft_b.set_xlim(0, range_m.max())
 
-ax_b_time.set_xlabel("Sample")
-ax_b_fft.set_xlabel("Range (m)")
+ax_fft_a.set_ylim(-140, 0)
+ax_fft_b.set_ylim(-140, 0)
 
-ax_a_time.set_ylim(-2048, 2047)
-ax_b_time.set_ylim(-2048, 2047)
-
-ax_a_fft.set_xlim(0, range_a.max())
-ax_b_fft.set_xlim(0, range_b.max())
+ax_noise.set_ylim(-140, -40)
 
 for ax in axes:
     ax.grid(True)
+
+ax_noise.legend()
+
+text_a = ax_fft_a.text(
+    0.02, 0.90, "", transform=ax_fft_a.transAxes
+)
+
+text_b = ax_fft_b.text(
+    0.02, 0.90, "", transform=ax_fft_b.transAxes
+)
+
 
 # =========================================================
 # UPDATE LOOP
@@ -283,20 +299,31 @@ for chirp_idx in range(START_CHIRP, END_CHIRP, CHIRP_STEP):
     freq_a, mag_a = calculate_fft_dbfs(adc_a, fs)
     freq_b, mag_b = calculate_fft_dbfs(adc_b, fs)
 
-    range_a = freq_a * C / (2 * slope)
-    range_b = freq_b * C / (2 * slope)
+    range_m = freq_a * C / (2.0 * slope)
 
-    line_a_time.set_ydata(adc_a)
-    line_b_time.set_ydata(adc_b)
+    noise_a = estimate_noise_floor_dbfs(mag_a)
+    noise_b = estimate_noise_floor_dbfs(mag_b)
 
-    line_a_fft.set_xdata(range_a)
-    line_a_fft.set_ydata(mag_a)
+    chirp_hist.append(chirp_idx)
+    noise_hist_a.append(noise_a)
+    noise_hist_b.append(noise_b)
 
-    line_b_fft.set_xdata(range_b)
-    line_b_fft.set_ydata(mag_b)
+    line_fft_a.set_xdata(range_m)
+    line_fft_a.set_ydata(mag_a)
 
-    ax_a_fft.set_ylim(mag_a.max() - 80, mag_a.max() + 5)
-    ax_b_fft.set_ylim(mag_b.max() - 80, mag_b.max() + 5)
+    line_fft_b.set_xdata(range_m)
+    line_fft_b.set_ydata(mag_b)
+
+    line_noise_a.set_data(chirp_hist, noise_hist_a)
+    line_noise_b.set_data(chirp_hist, noise_hist_b)
+
+    ax_noise.set_xlim(
+        max(0, chirp_idx - 500),
+        chirp_idx + 10
+    )
+
+    text_a.set_text(f"Noise floor: {noise_a:.2f} dBFS/bin")
+    text_b.set_text(f"Noise floor: {noise_b:.2f} dBFS/bin")
 
     fig.suptitle(f"Chirp {chirp_idx + 1}/{num_chirps}")
 
