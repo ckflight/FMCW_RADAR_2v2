@@ -16,18 +16,6 @@ FRAME_DELAY = 0.001
 REMOVE_DC = False
 USE_WINDOW = True
 
-# ---------------------------------------------------------
-# ADC FORMAT SELECT
-#
-# False = FPGA sends:
-#         0000 & adc_data(11 downto 0)
-#
-# True  = FPGA sends proper signed 16-bit
-#         (FIR enabled / sign extended)
-# ---------------------------------------------------------
-
-FIR_ENABLED = True
-
 # =========================================================
 
 HEADER = b"\xC8\xC8\xC8\xC8"
@@ -79,30 +67,10 @@ def parse_info_sector(info):
 
 def decode_adc(chirp_bytes):
 
-    # -----------------------------------------------------
-    # FIR ENABLED
-    # FPGA sends true signed 16-bit
-    # -----------------------------------------------------
-    if FIR_ENABLED:
+    raw = np.frombuffer(chirp_bytes, dtype=">i2").astype(np.int32) # big endian. 12 bit signed adc is resized as 16bit. fir is also 16 bit in out
 
-        raw = np.frombuffer(chirp_bytes, dtype=">i2").astype(np.int32)
-
-    # -----------------------------------------------------
-    # FIR DISABLED
-    # FPGA sends 0000 & adc_data
-    # -----------------------------------------------------
-    else:
-
-        raw = np.frombuffer(chirp_bytes, dtype=">i2").astype(np.int32)
-
-        # keep lower 12 bits
-        raw = raw & 0x0FFF
-
-        # manual 12-bit sign extension
-        raw[raw >= ADC_FS] -= 2 ** ADC_BITS
-
-    adc_a = raw[1::2]
-    adc_b = raw[0::2]
+    adc_a = raw[0::2]
+    adc_b = raw[1::2]
 
     return adc_a, adc_b
 
@@ -158,7 +126,7 @@ bytes_per_chirp = samples_per_chirp * BYTES_PER_SAMPLE_PAIR
 
 print("\nINFO")
 print("----")
-print("FIR enabled   :", FIR_ENABLED)
+#print("FIR enabled   :", FIR_ENABLED)
 print("Sweep time    :", f"{info['SWEEP_TIME'] * 1e6:.0f} us")
 print("Sweep gap     :", f"{info['SWEEP_GAP'] * 1e6:.0f} us")
 print("Sampling freq :", f"{fs / 1e6:.3f} MHz")
