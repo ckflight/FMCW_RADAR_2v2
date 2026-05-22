@@ -5,7 +5,7 @@ import numpy as np
 # =========================================================
 # OS SELECT
 # =========================================================
-OS_TYPE = "windows"   # "ubuntu" or "windows"
+OS_TYPE = "ubuntu"   # "ubuntu" or "windows"
 
 if OS_TYPE == "ubuntu":
     import pylibftdi as ftdi

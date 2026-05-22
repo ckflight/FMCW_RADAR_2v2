@@ -6,10 +6,10 @@ import struct
 # SETTINGS
 # =========================================================
 
-FILENAME = "400KHz_400mhz.bin"
+FILENAME = "record.bin"
 
-INTEGRATION_CHIRPS = 256      # software CPI size: 32, 64, 128, etc.
-BLOCK_STEP = 256              # 128 = no overlap, 1 = sliding integration
+INTEGRATION_CHIRPS = 128      # software CPI size: 32, 64, 128, etc.
+BLOCK_STEP = 128              # 128 = no overlap, 1 = sliding integration
 
 USE_LOG_MAX_DISTANCE = True # plots calcualted max distance by fs and hz/m
 MAX_RANGE_DISPLAY = 125 # user selected range if USE_LOG_MAX_DISTANCE = False
