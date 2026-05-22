@@ -1,24 +1,29 @@
 import time
 import struct
-import pylibftdi as ftdi
 import numpy as np
 
+# =========================================================
+# OS SELECT
+# =========================================================
+OS_TYPE = "windows"   # "ubuntu" or "windows"
 
-# 1: Generate muxout signal internally to test
-# 0: ADF4158 Generates mux
-TEST_MUX         = 0 
-
-# ADF4158 Setting
-if TEST_MUX == 0:
-    SWEEP_TIME = 1000e-6
-    SWEEP_GAP  = 10e-6
-
-# Test mux settings
+if OS_TYPE == "ubuntu":
+    import pylibftdi as ftdi
+elif OS_TYPE == "windows":
+    import ftd2xx as ftdi
 else:
-    SWEEP_TIME = 250e-6 # fpga sets this. this number has no affect
+    raise ValueError("OS_TYPE must be 'ubuntu' or 'windows'")
+
+TEST_MUX = 0
+
+if TEST_MUX == 0:
+    SWEEP_TIME = 500e-6
+    SWEEP_GAP  = 10e-6
+else:
+    SWEEP_TIME = 250e-6
     SWEEP_GAP  = 10e-6
 
-USE_LOG_NAME = True # log to the file names as below.
+USE_LOG_NAME = False
 CURRENT_FIR_HPF_KHZ = "400KHz"
 OUTPUT_FILENAME = CURRENT_FIR_HPF_KHZ + "_400mhz.bin"
 
@@ -28,52 +33,79 @@ SAMPLING_FREQUENCY = 2_000_000
 NUMBER_OF_SAMPLES  = int(SAMPLING_FREQUENCY * SWEEP_TIME)
 
 SWEEP_START = 5.30e9
-SWEEP_BW    = 400e6
+SWEEP_BW    = 700e6
 
 GAIN             = 10
 SWEEP_TYPE       = 0
 DATA_LOG         = 0
 ADC_SELECT       = 0
-PA_MODE          = 0 # 1 on off, 0 on during chirp
+PA_MODE          = 0
 FIR_ENABLE       = 1
-SEND_DATA_TYPE   = 1 # 1 adc, 0 test data
+SEND_DATA_TYPE   = 1
 ADC_RESOLUTION   = 12
 SAMPLE_AVERAGING = 1
 
 INFO_SECTOR_SIZE = 512
 
-RX_IDLE_TIMEOUT = 2.0 # reception done time
-TX_START_CHAR = b"C" # fpga wait for this character to start transmission. It is for sync with python reception.
+RX_IDLE_TIMEOUT = 2.0
+TX_START_CHAR = b"C"
 
 def open_ftdi():
 
     DEVICE_ID = "FTBJ7TCT"
+    DEVICE_INDEX = 0
 
     SYNCFF = 0x40
     SIO_RTS_CTS_HS = (0x1 << 8)
+
     READ_CHUNK_SIZE  = 0x10000
     WRITE_CHUNK_SIZE = 0x10000
 
-    dev = ftdi.Device(
-        device_id=DEVICE_ID,
-        mode="b",
-        interface_select=ftdi.INTERFACE_A
-    )
+    if OS_TYPE == "ubuntu":
 
-    dev.open()
+        dev = ftdi.Device(
+            device_id=DEVICE_ID,
+            mode="b",
+            interface_select=ftdi.INTERFACE_A
+        )
 
-    dev.ftdi_fn.ftdi_set_bitmode(0xFF, SYNCFF)
+        dev.open()
 
-    time.sleep(0.1)
+        dev.ftdi_fn.ftdi_set_bitmode(0xFF, SYNCFF)
 
-    dev.ftdi_fn.ftdi_read_data_set_chunksize(READ_CHUNK_SIZE)
-    dev.ftdi_fn.ftdi_write_data_set_chunksize(WRITE_CHUNK_SIZE)
+        time.sleep(0.1)
 
-    dev.ftdi_fn.ftdi_setflowctrl(SIO_RTS_CTS_HS)
+        dev.ftdi_fn.ftdi_read_data_set_chunksize(READ_CHUNK_SIZE)
+        dev.ftdi_fn.ftdi_write_data_set_chunksize(WRITE_CHUNK_SIZE)
 
-    dev.flush()
+        dev.ftdi_fn.ftdi_setflowctrl(SIO_RTS_CTS_HS)
 
-    print("FTDI OPENED")
+        dev.flush()
+
+    elif OS_TYPE == "windows":
+
+        dev = ftdi.open(DEVICE_INDEX)
+
+        dev.setBitMode(0xFF, SYNCFF)
+
+        time.sleep(0.1)
+
+        dev.setUSBParameters(
+            READ_CHUNK_SIZE,
+            WRITE_CHUNK_SIZE
+        )
+
+        dev.setLatencyTimer(2)
+
+        dev.setFlowControl(
+            ftdi.defines.FLOW_RTS_CTS,
+            0,
+            0
+        )
+
+        dev.purge()
+
+    print(f"FTDI OPENED using {OS_TYPE}")
 
     return dev
 
@@ -146,14 +178,11 @@ def build_info_sector():
 
     hz_per_m = (2.0 * SWEEP_BW) / (3.0e8 * SWEEP_TIME)
 
-    # 0-3: file magic
     info[0:4] = b"FMCW"
     offset = 4
 
-    # 4-7: binary format version
     put_u32(1)
 
-    # Radar config
     put_f32(SWEEP_TIME)
     put_f32(SWEEP_GAP)
     put_u32(RECORD_TIME)
@@ -177,12 +206,10 @@ def build_info_sector():
 
     put_f32(hz_per_m)
 
-    # File layout info
     put_u32(INFO_SECTOR_SIZE)
     put_u32(INFO_SECTOR_SIZE)
 
     return bytes(info)
-
 
 
 dev = open_ftdi()
@@ -193,23 +220,22 @@ print("\nTOTAL CONFIG BYTES:", len(packet))
 print("RAW HEX:", packet.hex(" "))
 
 print("\nSENDING CONFIG...\n")
-
 dev.write(packet)
 
 time.sleep(1.0)
 
 print("SENDING C COMMAND...\n")
-
 dev.write(TX_START_CHAR)
 
 print("RECEIVING DATA...\n")
 
 if USE_LOG_NAME == True:
     f = open(OUTPUT_FILENAME, "wb")
+    saved_name = OUTPUT_FILENAME
 else:
     f = open("record.bin", "wb")
+    saved_name = "record.bin"
 
-# Write 512-byte binary info sector first
 f.write(build_info_sector())
 f.flush()
 
@@ -220,6 +246,12 @@ received_started = False
 try:
 
     while True:
+
+        now = time.time()
+
+        if now - start_time >= RECORD_TIME:
+            print(f"\nRECORD_TIME reached: {RECORD_TIME} s. Ending reception.")
+            break
 
         rx = dev.read(1024)
         now = time.time()
@@ -267,6 +299,6 @@ data_bytes = total_bytes - INFO_SECTOR_SIZE
 f.close()
 dev.close()
 
-print("\nSAVED: record.bin")
+print(f"\nSAVED: {saved_name}")
 print("TOTAL BYTES:", total_bytes)
 print("DATA BYTES :", data_bytes)
