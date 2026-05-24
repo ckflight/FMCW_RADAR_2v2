@@ -10,6 +10,8 @@ import matplotlib.pyplot as plt
 # 3. Also adds this sum array to a waterfall array for plotting
 # 4. Creates range doppler map by taking FFT over columns of the array generated from FFT of 2D array for 128 chirps x adc samples
 
+# This code is for .bin files logged with radar2v2 sdcard
+
 OPERATING_SYSTEM = 1   # 1 = Ubuntu/Linux, 2 = Windows
 
 if OPERATING_SYSTEM == 1:

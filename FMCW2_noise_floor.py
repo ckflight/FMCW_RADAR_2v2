@@ -1,11 +1,10 @@
 import numpy as np
 import matplotlib.pyplot as plt
+from pathlib import Path
 
-# =========================================================
-# SETTINGS
-# =========================================================
+# this code works with both usb .tx or sdcard .bin file logged with radar2v2
 
-FILENAME = "Radar_Records/radar2v2_horn_48kHz_2024_04_09_16_41_58_parking_lot_sar.txt"
+FILENAME = "fmcw2_bin_files/terrace_no_movement_att.bin"   # .txt USB or .bin SD card
 
 START_CHIRP = 0
 END_CHIRP = None
@@ -18,51 +17,47 @@ USE_WINDOW = True
 IGNORE_FIRST_BINS = 5
 NOISE_PERCENTILE = 20
 
-C = 3e8
+INFO_SECTOR_SIZE = 512
 
+# SD bin raw sample format after first 512 bytes
+BIN_SAMPLE_DTYPE = "<u2"      # STM32 SD log usually little-endian uint16
+BIN_CHIRP_HEADER_SAMPLES = 0  # set 1 if each chirp has 2-byte header
 
 # =========================================================
 # TXT INFO PARSER
 # =========================================================
 
-def read_int_line(lines, idx, name):
-    value = int(lines[idx].strip())
-    return value, idx + 1
+def read_int_line(lines, idx):
+    return int(lines[idx].strip()), idx + 1
 
 
 def parse_txt_info(lines):
     p = {}
     idx = 0
 
-    p["RECORD_COUNTER"], idx = read_int_line(lines, idx, "RECORD_COUNTER")
-    p["RECORD_TIME"], idx = read_int_line(lines, idx, "RECORD_TIME")
+    names = [
+        "RECORD_COUNTER",
+        "RECORD_TIME",
+        "SWEEP_TIME_US",
+        "SWEEP_GAP_US",
+        "SWEEP_START",
+        "SWEEP_BW",
+        "SAMPLING_FREQUENCY",
+        "NUMBER_OF_SAMPLES",
+        "TX_MODE",
+        "TX_POWER_DBM",
+        "TX_POWER_DBM_VOLTAGE",
+        "HZ_PER_M",
+        "DATA_LOG",
+        "ADC_SELECT",
+        "USB_DATA_TYPE",
+        "ADC_RESOLUTION",
+        "PHASE_DISTANCE",
+    ]
 
-    p["SWEEP_TIME_US"], idx = read_int_line(lines, idx, "SWEEP_TIME_US")
-    p["SWEEP_GAP_US"], idx = read_int_line(lines, idx, "SWEEP_GAP_US")
+    for name in names:
+        p[name], idx = read_int_line(lines, idx)
 
-    p["SWEEP_TIME"] = p["SWEEP_TIME_US"] * 1e-6
-    p["SWEEP_GAP"] = p["SWEEP_GAP_US"] * 1e-6
-
-    p["SWEEP_START"], idx = read_int_line(lines, idx, "SWEEP_START")
-    p["SWEEP_BW"], idx = read_int_line(lines, idx, "SWEEP_BW")
-
-    p["SAMPLING_FREQUENCY"], idx = read_int_line(lines, idx, "SAMPLING_FREQUENCY")
-    p["NUMBER_OF_SAMPLES"], idx = read_int_line(lines, idx, "NUMBER_OF_SAMPLES")
-
-    p["TX_MODE"], idx = read_int_line(lines, idx, "TX_MODE")
-    p["TX_POWER_DBM"], idx = read_int_line(lines, idx, "TX_POWER_DBM")
-    p["TX_POWER_DBM_VOLTAGE"], idx = read_int_line(lines, idx, "TX_POWER_DBM_VOLTAGE")
-
-    p["HZ_PER_M"], idx = read_int_line(lines, idx, "HZ_PER_M")
-
-    p["DATA_LOG"], idx = read_int_line(lines, idx, "DATA_LOG")
-    p["ADC_SELECT"], idx = read_int_line(lines, idx, "ADC_SELECT")
-    p["USB_DATA_TYPE"], idx = read_int_line(lines, idx, "USB_DATA_TYPE")
-    p["ADC_RESOLUTION"], idx = read_int_line(lines, idx, "ADC_RESOLUTION")
-    p["PHASE_DISTANCE"], idx = read_int_line(lines, idx, "PHASE_DISTANCE")
-
-    # Newer record code may have CPI_CHIRP before date.
-    # Older txt files may directly have date after PHASE_DISTANCE.
     maybe_next = lines[idx].strip()
 
     try:
@@ -76,6 +71,58 @@ def parse_txt_info(lines):
         idx += 1
 
     p["DATA_START_LINE"] = idx
+    return p
+
+
+# =========================================================
+# BIN INFO PARSER
+# =========================================================
+
+def u32_be(buf, off):
+    return (
+        (buf[off] << 24)
+        | (buf[off + 1] << 16)
+        | (buf[off + 2] << 8)
+        | buf[off + 3]
+    )
+
+
+def parse_bin_info(raw512):
+    p = {}
+
+    names = [
+        "RECORD_COUNTER",
+        "RECORD_TIME",
+        "SWEEP_TIME_US",
+        "SWEEP_GAP_US",
+        "SWEEP_START",
+        "SWEEP_BW",
+        "SAMPLING_FREQUENCY",
+        "NUMBER_OF_SAMPLES",
+        "HZ_PER_M",
+    ]
+
+    idx = 0
+    for name in names:
+        p[name] = u32_be(raw512, idx)
+        idx += 4
+
+    # Optional/default fields for compatibility with txt print section
+    p.setdefault("TX_MODE", 0)
+    p.setdefault("TX_POWER_DBM", 0)
+    p.setdefault("TX_POWER_DBM_VOLTAGE", 0)
+    p.setdefault("DATA_LOG", 1)
+    p.setdefault("ADC_SELECT", 0)
+    p.setdefault("USB_DATA_TYPE", 1)
+    p.setdefault("ADC_RESOLUTION", 16)
+    p.setdefault("PHASE_DISTANCE", 0)
+    p.setdefault("CPI_CHIRP", 1)
+
+    date_bytes = raw512[64:128].split(b"\x00")[0]
+    try:
+        p["RECORD_DATE"] = date_bytes.decode("ascii", errors="ignore").strip()
+    except Exception:
+        p["RECORD_DATE"] = ""
 
     return p
 
@@ -97,12 +144,9 @@ def decode_usb_hex_line(hex_line, info):
     adc_bits = int(info["ADC_RESOLUTION"])
 
     samples = []
-
     idx = 0
 
     if adc_select == 1:
-        # MAX1426 style packed 10-bit:
-        # current_sample_16bit = ((byte0 & 0xF) << 6) | (byte1 & 0x3F)
         while idx + 1 < len(b):
             s = ((b[idx] & 0x0F) << 6) | (b[idx + 1] & 0x3F)
             samples.append(s)
@@ -110,7 +154,6 @@ def decode_usb_hex_line(hex_line, info):
 
     elif adc_select == 0:
         if usb_data_type == 0:
-            # 8-bit scaled USB mode from your plot code
             while idx < len(b):
                 current_sample_8bit = b[idx] & 0xFF
                 current_sample_float = current_sample_8bit / 150.0
@@ -120,7 +163,6 @@ def decode_usb_hex_line(hex_line, info):
                 idx += 1
 
         elif usb_data_type == 1:
-            # 16-bit raw ADC data, big-endian exactly like old plot code
             while idx + 1 < len(b):
                 s = ((b[idx] & 0xFF) << 8) | (b[idx + 1] & 0xFF)
                 samples.append(s)
@@ -130,13 +172,82 @@ def decode_usb_hex_line(hex_line, info):
 
 
 # =========================================================
+# LOADERS
+# =========================================================
+
+def load_txt_record(filename):
+    with open(filename, "r") as f:
+        lines = f.readlines()
+
+    info = parse_txt_info(lines)
+    samples_per_chirp = int(info["NUMBER_OF_SAMPLES"])
+
+    chirps = []
+
+    for line in lines[info["DATA_START_LINE"]:]:
+        samples = decode_usb_hex_line(line, info)
+
+        if samples is None:
+            continue
+
+        if len(samples) >= samples_per_chirp:
+            chirps.append(samples[:samples_per_chirp])
+
+    if len(chirps) == 0:
+        raise RuntimeError("No valid chirps found in txt file")
+
+    return info, np.array(chirps, dtype=np.int32), "USB TXT"
+
+
+def load_bin_record(filename):
+    with open(filename, "rb") as f:
+        raw = f.read()
+
+    if len(raw) <= INFO_SECTOR_SIZE:
+        raise RuntimeError("BIN file is too small")
+
+    info = parse_bin_info(raw[:INFO_SECTOR_SIZE])
+
+    samples_per_chirp = int(info["NUMBER_OF_SAMPLES"])
+    total_samples_per_chirp = samples_per_chirp + BIN_CHIRP_HEADER_SAMPLES
+
+    data = np.frombuffer(raw[INFO_SECTOR_SIZE:], dtype=np.dtype(BIN_SAMPLE_DTYPE)).astype(np.int32)
+
+    usable_samples = (len(data) // total_samples_per_chirp) * total_samples_per_chirp
+    data = data[:usable_samples]
+
+    chirps_raw = data.reshape(-1, total_samples_per_chirp)
+
+    if BIN_CHIRP_HEADER_SAMPLES > 0:
+        chirps = chirps_raw[:, BIN_CHIRP_HEADER_SAMPLES:]
+    else:
+        chirps = chirps_raw
+
+    if len(chirps) == 0:
+        raise RuntimeError("No valid chirps found in bin file")
+
+    return info, chirps, "SD BIN"
+
+
+def load_record(filename):
+    suffix = Path(filename).suffix.lower()
+
+    if suffix == ".txt":
+        return load_txt_record(filename)
+
+    if suffix == ".bin":
+        return load_bin_record(filename)
+
+    raise RuntimeError("Unsupported file type. Use .txt or .bin")
+
+
+# =========================================================
 # FFT DBFS
 # =========================================================
 
 def calculate_fft_dbfs(samples_u, fs, adc_bits):
     x = samples_u.astype(np.float32)
 
-    # Convert unsigned ADC code to signed around ADC midscale
     adc_mid = 2 ** (adc_bits - 1)
     adc_fs = 2 ** (adc_bits - 1)
 
@@ -169,47 +280,28 @@ def estimate_noise_floor_dbfs(mag_dbfs):
 
 
 # =========================================================
-# READ TXT FILE
+# LOAD FILE
 # =========================================================
 
-with open(FILENAME, "r") as f:
-    lines = f.readlines()
-
-info = parse_txt_info(lines)
+info, chirps, source_type = load_record(FILENAME)
 
 fs = float(info["SAMPLING_FREQUENCY"])
 samples_per_chirp = int(info["NUMBER_OF_SAMPLES"])
 adc_bits = int(info["ADC_RESOLUTION"])
 hz_per_m = float(info["HZ_PER_M"])
 
-data_lines = lines[info["DATA_START_LINE"]:]
-
-chirps = []
-
-for line in data_lines:
-    samples = decode_usb_hex_line(line, info)
-
-    if samples is None:
-        continue
-
-    if len(samples) >= samples_per_chirp:
-        samples = samples[:samples_per_chirp]
-        chirps.append(samples)
-
-if len(chirps) == 0:
-    raise RuntimeError("No valid chirps found in txt file")
-
 num_chirps = len(chirps)
 
 if END_CHIRP is None:
     END_CHIRP = num_chirps
 
+END_CHIRP = min(END_CHIRP, num_chirps)
 
 # =========================================================
 # PRINT INFO
 # =========================================================
 
-print("\n========== TXT LOG INFO ==========")
+print(f"\n========== {source_type} LOG INFO ==========")
 print(f"Record counter       : {info['RECORD_COUNTER']}")
 print(f"Valid chirps         : {num_chirps}")
 print(f"Record time          : {info['RECORD_TIME']} s")
@@ -244,7 +336,6 @@ print(f"Phase distance       : {info['PHASE_DISTANCE']} cm")
 print(f"CPI chirp            : {info['CPI_CHIRP']}")
 print("==================================\n")
 
-
 # =========================================================
 # INITIAL FFT
 # =========================================================
@@ -252,11 +343,8 @@ print("==================================\n")
 freq, mag_dbfs = calculate_fft_dbfs(chirps[START_CHIRP], fs, adc_bits)
 range_m = freq / hz_per_m
 
-noise = estimate_noise_floor_dbfs(mag_dbfs)
-
 noise_hist = []
 chirp_hist = []
-
 
 # =========================================================
 # PLOTS
@@ -270,7 +358,7 @@ ax_noise = axes[1]
 line_fft, = ax_fft.plot(range_m, mag_dbfs)
 line_noise, = ax_noise.plot([], [], label="Noise Floor")
 
-ax_fft.set_title("USB TXT FFT dBFS/bin")
+ax_fft.set_title(f"{source_type} FFT dBFS/bin")
 ax_noise.set_title("Noise Floor vs Chirp")
 
 ax_fft.set_ylabel("dBFS/bin")
@@ -296,7 +384,6 @@ text_noise = ax_fft.text(
     transform=ax_fft.transAxes
 )
 
-
 # =========================================================
 # UPDATE LOOP
 # =========================================================
@@ -304,7 +391,6 @@ text_noise = ax_fft.text(
 plt.ion()
 
 for chirp_idx in range(START_CHIRP, END_CHIRP, CHIRP_STEP):
-
     samples = chirps[chirp_idx]
 
     freq, mag_dbfs = calculate_fft_dbfs(samples, fs, adc_bits)
@@ -327,7 +413,7 @@ for chirp_idx in range(START_CHIRP, END_CHIRP, CHIRP_STEP):
 
     text_noise.set_text(f"Noise floor: {noise:.2f} dBFS/bin")
 
-    fig.suptitle(f"Chirp {chirp_idx + 1}/{num_chirps}")
+    fig.suptitle(f"{source_type} - Chirp {chirp_idx + 1}/{num_chirps}")
 
     fig.tight_layout()
     fig.canvas.draw()

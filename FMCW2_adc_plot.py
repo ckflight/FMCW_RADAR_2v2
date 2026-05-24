@@ -1,6 +1,8 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
+# This code is for .bin files logged with radar2v2 sdcard
+
 OPERATING_SYSTEM = 1   # 1 = Ubuntu/Linux, 2 = Windows
 
 if OPERATING_SYSTEM == 1:
