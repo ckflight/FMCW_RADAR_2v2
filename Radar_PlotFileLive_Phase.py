@@ -62,9 +62,6 @@ print("Hz per m : ", hz_per_m)
 DATA_LOG            = read_int_line(record_file)
 print("Data Log : ", DATA_LOG)
 
-ADC_SELECT          = read_int_line(record_file)
-print("ADC Select : ", ADC_SELECT)
-
 USB_DATA_TYPE       = read_int_line(record_file)
 print("USB Data Type : ", USB_DATA_TYPE)
 

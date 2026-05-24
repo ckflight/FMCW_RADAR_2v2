@@ -9,7 +9,6 @@ import os
 import binascii
 from datetime import datetime
 
-ADC_SELECT          = 0             # 0 for ADC DMA, 1 for External ADC MAX1426
 RECORD_TIME         = 10            # in sec
 TEST_DEVICE         = 1             # 0 STM32F4, 1 STM32H7, 2 FPGA
 OPERATING_SYSTEM    = 1             # 0 MAC, 1 UBUNTU, 2 WINDOWS (Havent implemented serial on windows.)
@@ -26,9 +25,9 @@ SWEEP_BW            = 400e6
 # 10 bit: 128 chirp 250us,  64chirp 500us,  32chirp 1000us 
 
 DATA_LOG            = 1             # 0 for USB transfer, 1 for MicroCard Log
-SWEEP_TIME          = 500e-6        # 100 micro or 10 ms all working, sdcard log is designed for 128 chirp 250 micro for now
-CPI_CHIRP           = 64            # 1 for USB, 32 for 1ms SWEEP_TIME, 64 for 500, 128 for 250 16bit, 250 10 12 14 bit 64(max)
-ADC_RESOLUTION      = 12            # 10, 12, 14, 16
+SWEEP_TIME          = 1000e-6        # 100 micro or 10 ms all working, sdcard log is designed for 128 chirp 250 micro for now
+CPI_CHIRP           = 32            # 1 for USB, 32 for 1ms SWEEP_TIME, 64 for 500, 128 for 250 16bit, 250 10 12 14 bit 64(max)
+ADC_RESOLUTION      = 16              # 10, 12, 14, 16
 SAMPLE_AVERAGING    = 1             # 1, 2, 4, 8, 16
 
 TX_MODE             = 0             # 0 for continuous tx, 1 for on off with tx, 2 for testing when tx off
@@ -42,39 +41,35 @@ USB_DATA_TYPE       = 1             # 0-> floating/2 x100 is sent ove usb, 1-> 1
 
 PHASE_DISTANCE      = 380   # cm
 
-# Select ADC FS here
-if ADC_SELECT == 0:
-    # 1ms sampling numbers are actual sampling khz freq.
-    if TEST_DEVICE == 0:
-        # Options: 518KHz(900), 618KHz(900), 778KHz(700), 933KHz(933smp),
-        # 1.050MHz(1050smp), 1.556MHz(1556smp), 2.8 MHz(2700smp)
-        SAMPLING_FREQUENCY = 1050000 # 58dbfs noise floor
-        #SAMPLING_FREQUENCY = 1550000  # 58dbfs noise floor
-        #SAMPLING_FREQUENCY = 2600000 # 70dbfs noise floor
-        NUMBER_OF_SAMPLES = int(SAMPLING_FREQUENCY * SWEEP_TIME) * 1  # NUMBER_OF_SAMPLES(16bit) = SAMPLING_FREQUENCY * SWEEP_TIME(int)
+# 1ms sampling numbers are actual sampling khz freq.
+if TEST_DEVICE == 0:
+    # Options: 518KHz(900), 618KHz(900), 778KHz(700), 933KHz(933smp),
+    # 1.050MHz(1050smp), 1.556MHz(1556smp), 2.8 MHz(2700smp)
+    SAMPLING_FREQUENCY = 1050000 # 58dbfs noise floor
+    #SAMPLING_FREQUENCY = 1550000  # 58dbfs noise floor
+    #SAMPLING_FREQUENCY = 2600000 # 70dbfs noise floor
+    NUMBER_OF_SAMPLES = int(SAMPLING_FREQUENCY * SWEEP_TIME) * 1  # NUMBER_OF_SAMPLES(16bit) = SAMPLING_FREQUENCY * SWEEP_TIME(int)
 
-    if TEST_DEVICE == 1:
-        # Oversampling 2 works with highest rates for each bit options.
-        if ADC_RESOLUTION == 16:
-            freq = 3700000
-        elif ADC_RESOLUTION == 14:
-            freq = 4100000
-        elif ADC_RESOLUTION == 12:
-            freq = 4600000
-        elif ADC_RESOLUTION == 10:
-            freq = 5300000
+if TEST_DEVICE == 1:
+    # Oversampling 2 works with highest rates for each bit options.
+    if ADC_RESOLUTION == 16:
+        freq = 3700000
+    elif ADC_RESOLUTION == 14:
+        freq = 4100000
+    elif ADC_RESOLUTION == 12:
+        freq = 4600000
+    elif ADC_RESOLUTION == 10:
+        freq = 5300000
 
-        SAMPLING_FREQUENCY = int(freq / SAMPLE_AVERAGING)
-        NUMBER_OF_SAMPLES = int(SAMPLING_FREQUENCY * SWEEP_TIME) * 1  # NUMBER_OF_SAMPLES(16bit) = SAMPLING_FREQUENCY * SWEEP_TIME(int)
+    SAMPLING_FREQUENCY = int(freq / SAMPLE_AVERAGING)
+    NUMBER_OF_SAMPLES = int(SAMPLING_FREQUENCY * SWEEP_TIME) * 1  # NUMBER_OF_SAMPLES(16bit) = SAMPLING_FREQUENCY * SWEEP_TIME(int)
 
-    if TEST_DEVICE == 2:
-        SAMPLE_AVERAGING = 1 
-        SAMPLING_FREQUENCY = 2000000 # 40 Msps with 20 decimation 2 Msps
-        NUMBER_OF_SAMPLES = int(SAMPLING_FREQUENCY * SWEEP_TIME) * 1  # NUMBER_OF_SAMPLES(16bit) = SAMPLING_FREQUENCY * SWEEP_TIME(int)
-        BUFFER_LEN = 4096
-else:
-    SAMPLING_FREQUENCY  = 4000000
-    NUMBER_OF_SAMPLES   = 400  # NUMBER_OF_SAMPLE(16bit) = SAMPLING_FREQUENCY * SWEEP_TIME(int)
+if TEST_DEVICE == 2:
+    SAMPLE_AVERAGING = 1 
+    SAMPLING_FREQUENCY = 2000000 # 40 Msps with 20 decimation 2 Msps
+    NUMBER_OF_SAMPLES = int(SAMPLING_FREQUENCY * SWEEP_TIME) * 1  # NUMBER_OF_SAMPLES(16bit) = SAMPLING_FREQUENCY * SWEEP_TIME(int)
+    BUFFER_LEN = 4096
+
 
 # VCO range is 0V = 5.1GHz and 10V = 6.3GHz range 1200 max
 # 100MHz long range check: usable range 5.2 to 6.1 max and 5.2-5.3 is best 5.3 to 5.8 is good
@@ -97,9 +92,6 @@ else:
     if TEST_DEVICE == 2:
         SWEEP_GAP = 1000e-6
 
-    #SWEEP_GAP = 4095 * 1.0e-6
-    #if SWEEP_GAP >= 4095 * 1.0e-6:
-        #SWEEP_GAP = 4095 * 1.0e-6
 
 distance = 1
 hz_per_m = 0
@@ -243,7 +235,6 @@ def Configuration_Process_FTDI(device):
     write_u8(device, "GAIN", np.uint8(GAIN))
     write_u8(device, "SWEEP_TYPE", np.uint8(SWEEP_TYPE))
     write_u8(device, "DATA_LOG", np.uint8(DATA_LOG))
-    write_u8(device, "ADC_SELECT", np.uint8(ADC_SELECT))
     write_u8(device, "USE_PLL", np.uint8(USE_PLL))
     write_u8(device, "CHECK_MODE", np.uint8(CHECK_MODE))
     write_u8(device, "USB_DATA_TYPE", np.uint8(USB_DATA_TYPE))
@@ -319,9 +310,6 @@ def Configuration_Process():
 
             data_log = np.uint8(DATA_LOG)
             ser.write(binascii.hexlify(data_log))
-
-            adc_select = np.uint8(ADC_SELECT)
-            ser.write(binascii.hexlify(adc_select))
 
             use_pll = np.uint8(USE_PLL)
             ser.write(binascii.hexlify(use_pll))
@@ -427,8 +415,6 @@ if DATA_LOG == 0:
     data_record_file.write(str(hz_per_m))
     data_record_file.write("\r\n")
     data_record_file.write(str(DATA_LOG))
-    data_record_file.write("\r\n")
-    data_record_file.write(str(ADC_SELECT))
     data_record_file.write("\r\n")
     data_record_file.write(str(USB_DATA_TYPE))
     data_record_file.write("\r\n")

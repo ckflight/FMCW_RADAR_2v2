@@ -60,7 +60,6 @@ GAIN                = 4
 CHECK_MODE          = 0
 TEST_DEVICE         = 1             # 1: STM32H7 serial on Linux (/dev/ttyACM0)
 SALLENKEY_FC_KHZ    = 48
-ADC_SELECT          = 0
 
 # ============================================================
 # LIVE PLOT + PERFORMANCE CONFIG
@@ -82,12 +81,9 @@ Y_MIN_SPAN          = 200.0         # um
 # ============================================================
 # DERIVED PARAMETERS (matching your original intent)
 # ============================================================
-if ADC_SELECT == 0:
-    SAMPLING_FREQUENCY = int(ADC_FS / ADC_AVERAGING)
-    NUMBER_OF_SAMPLES  = int(SAMPLING_FREQUENCY / 1000) * 1
-else:
-    SAMPLING_FREQUENCY = 400000
-    NUMBER_OF_SAMPLES  = 400
+
+SAMPLING_FREQUENCY = int(ADC_FS / ADC_AVERAGING)
+NUMBER_OF_SAMPLES  = int(SAMPLING_FREQUENCY / 1000) * 1
 
 # hz_per_m exactly as your record code (distance=1m)
 hz_per_m = 0

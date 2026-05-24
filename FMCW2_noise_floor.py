@@ -4,7 +4,10 @@ from pathlib import Path
 
 # this code works with both usb .tx or sdcard .bin file logged with radar2v2
 
-FILENAME = "fmcw2_bin_files/terrace_no_movement_att.bin"   # .txt USB or .bin SD card
+#FILENAME = "/home/ck/Desktop/flight_log.bin" 
+FILENAME = "fmcw2_bin_files/10bit_sync.bin"
+
+#FILENAME = "Radar_Records/radar2v2_horn_48kHz_2024_04_09_19_09_57_home_to_outside_buildings.txt"   
 
 START_CHIRP = 0
 END_CHIRP = None
@@ -49,7 +52,6 @@ def parse_txt_info(lines):
         "TX_POWER_DBM_VOLTAGE",
         "HZ_PER_M",
         "DATA_LOG",
-        "ADC_SELECT",
         "USB_DATA_TYPE",
         "ADC_RESOLUTION",
         "PHASE_DISTANCE",
@@ -112,7 +114,6 @@ def parse_bin_info(raw512):
     p.setdefault("TX_POWER_DBM", 0)
     p.setdefault("TX_POWER_DBM_VOLTAGE", 0)
     p.setdefault("DATA_LOG", 1)
-    p.setdefault("ADC_SELECT", 0)
     p.setdefault("USB_DATA_TYPE", 1)
     p.setdefault("ADC_RESOLUTION", 16)
     p.setdefault("PHASE_DISTANCE", 0)
@@ -139,34 +140,26 @@ def decode_usb_hex_line(hex_line, info):
 
     b = bytes.fromhex(hex_line)
 
-    adc_select = int(info["ADC_SELECT"])
     usb_data_type = int(info["USB_DATA_TYPE"])
     adc_bits = int(info["ADC_RESOLUTION"])
 
     samples = []
     idx = 0
 
-    if adc_select == 1:
+    if usb_data_type == 0:
+        while idx < len(b):
+            current_sample_8bit = b[idx] & 0xFF
+            current_sample_float = current_sample_8bit / 150.0
+            current_sample_float *= 3.3
+            current_sample_int = int(current_sample_float * (2 ** adc_bits))
+            samples.append(current_sample_int)
+            idx += 1
+
+    elif usb_data_type == 1:
         while idx + 1 < len(b):
-            s = ((b[idx] & 0x0F) << 6) | (b[idx + 1] & 0x3F)
+            s = ((b[idx] & 0xFF) << 8) | (b[idx + 1] & 0xFF)
             samples.append(s)
             idx += 2
-
-    elif adc_select == 0:
-        if usb_data_type == 0:
-            while idx < len(b):
-                current_sample_8bit = b[idx] & 0xFF
-                current_sample_float = current_sample_8bit / 150.0
-                current_sample_float *= 3.3
-                current_sample_int = int(current_sample_float * (2 ** adc_bits))
-                samples.append(current_sample_int)
-                idx += 1
-
-        elif usb_data_type == 1:
-            while idx + 1 < len(b):
-                s = ((b[idx] & 0xFF) << 8) | (b[idx + 1] & 0xFF)
-                samples.append(s)
-                idx += 2
 
     return np.array(samples, dtype=np.int32)
 
@@ -330,7 +323,6 @@ print(f"TX mode              : {info['TX_MODE']}")
 print(f"TX power             : {info['TX_POWER_DBM']} dBm")
 print(f"TX voltage code      : {info['TX_POWER_DBM_VOLTAGE']}")
 print(f"Data log             : {info['DATA_LOG']}")
-print(f"ADC select           : {info['ADC_SELECT']}")
 print(f"USB data type        : {info['USB_DATA_TYPE']}")
 print(f"Phase distance       : {info['PHASE_DISTANCE']} cm")
 print(f"CPI chirp            : {info['CPI_CHIRP']}")

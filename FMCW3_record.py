@@ -38,7 +38,6 @@ SWEEP_BW    = 700e6
 GAIN             = 10
 SWEEP_TYPE       = 0
 DATA_LOG         = 0
-ADC_SELECT       = 0
 PA_MODE          = 0
 FIR_ENABLE       = 1
 SEND_DATA_TYPE   = 1
@@ -150,7 +149,6 @@ def build_packet():
     push_u8("GAIN", GAIN)
     push_u8("SWEEP_TYPE", SWEEP_TYPE)
     push_u8("DATA_LOG", DATA_LOG)
-    push_u8("ADC_SELECT", ADC_SELECT)
     push_u8("USE_PLL", PA_MODE)
     push_u8("CHECK_MODE", FIR_ENABLE)
     push_u8("USB_DATA_TYPE", SEND_DATA_TYPE)
@@ -197,7 +195,6 @@ def build_info_sector():
     put_u32(GAIN)
     put_u32(SWEEP_TYPE)
     put_u32(DATA_LOG)
-    put_u32(ADC_SELECT)
     put_u32(PA_MODE)
     put_u32(FIR_ENABLE)
     put_u32(SEND_DATA_TYPE)

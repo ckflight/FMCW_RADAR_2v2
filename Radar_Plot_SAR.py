@@ -113,11 +113,6 @@ print("Data Log : ", str(DATA_LOG))
 
 data = str(record_file.readline())
 line_counter += 1
-ADC_SELECT = int(data[0:len(data) - 1])
-print("ADC Select : ", str(ADC_SELECT))
-
-data = str(record_file.readline())
-line_counter += 1
 USB_DATA_TYPE = int(data[0:len(data) - 1])
 print("USB Data Type : ", str(USB_DATA_TYPE))
 

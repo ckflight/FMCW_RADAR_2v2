@@ -103,11 +103,6 @@ print("Data Log : ", str(DATA_LOG))
 
 data = str(record_file.readline())
 line_counter += 1
-ADC_SELECT = int(data[0:len(data) - 1])
-print("ADC Select : ", str(ADC_SELECT))
-
-data = str(record_file.readline())
-line_counter += 1
 USB_DATA_TYPE = int(data[0:len(data) - 1])
 print("USB Data Type : ", str(USB_DATA_TYPE))
 
@@ -120,6 +115,10 @@ data = str(record_file.readline())
 line_counter += 1
 PHASE_DISTANCE = int(data[0:len(data) - 1])
 print("Phase Distance : ", str(PHASE_DISTANCE))
+
+CHIRP_NUMBER = str(record_file.readline())
+line_counter += 1
+print("Chirp Number: ", str(CHIRP_NUMBER))
 
 RECORD_DATE = str(record_file.readline())
 line_counter += 1
@@ -632,34 +631,27 @@ class DataSource(QtCore.QObject):
 
                 while index < length_line:
 
-                    if ADC_SELECT == 1:
-                        # For faster operation i transfer 4 bit and 6 bit of the samples in 2 bytes
-                        current_sample_16bit = ((samples_hex[index] & 0xF) << 6) | (samples_hex[index + 1] & 0x3F)
-                        current_sample_float = (current_sample_16bit / 2 ** 10) * 5.0
+                    if USB_DATA_TYPE == 0:  # 8 bit data float scaled for higher usb data rate
 
-                    elif ADC_SELECT == 0:
+                        current_sample_8bit = (samples_hex[index] & 0xFF)
+                        current_sample_float = (current_sample_8bit / 150.0)
+                        current_sample_float *= 3.3
+                        current_sample_16bit = (int)(current_sample_float * (2 ** ADC_RESOLUTION))
 
-                        if USB_DATA_TYPE == 0:  # 8 bit data float scaled for higher usb data rate
+                        index += 1
+                        freq_sample_array_float.append(current_sample_float)
+                        freq_sample_array_int.append(current_sample_16bit)
+                        time_sample_array.append(current_sample_float)
 
-                            current_sample_8bit = (samples_hex[index] & 0xFF)
-                            current_sample_float = (current_sample_8bit / 150.0)
-                            current_sample_float *= 3.3
-                            current_sample_16bit = (int)(current_sample_float * (2 ** ADC_RESOLUTION))
+                    # 16 bit raw adc data
+                    elif USB_DATA_TYPE == 1:
+                        current_sample_16bit = ((samples_hex[index] & 0xFF) << 8) | (samples_hex[index + 1] & 0xFF)
+                        current_sample_float = (current_sample_16bit / 2 ** ADC_RESOLUTION) * 3.3
 
-                            index += 1
-                            freq_sample_array_float.append(current_sample_float)
-                            freq_sample_array_int.append(current_sample_16bit)
-                            time_sample_array.append(current_sample_float)
-
-                        # 16 bit raw adc data
-                        elif USB_DATA_TYPE == 1:
-                            current_sample_16bit = ((samples_hex[index] & 0xFF) << 8) | (samples_hex[index + 1] & 0xFF)
-                            current_sample_float = (current_sample_16bit / 2 ** ADC_RESOLUTION) * 3.3
-
-                            index += 2
-                            freq_sample_array_float.append(current_sample_float)
-                            freq_sample_array_int.append(current_sample_16bit)
-                            time_sample_array.append(current_sample_float)
+                        index += 2
+                        freq_sample_array_float.append(current_sample_float)
+                        freq_sample_array_int.append(current_sample_16bit)
+                        time_sample_array.append(current_sample_float)
 
             # Add another plot and try plotting with pointwise update from left to right
 

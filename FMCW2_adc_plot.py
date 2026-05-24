@@ -6,7 +6,9 @@ import matplotlib.pyplot as plt
 OPERATING_SYSTEM = 1   # 1 = Ubuntu/Linux, 2 = Windows
 
 if OPERATING_SYSTEM == 1:
-    BIN_FILE = "/home/ck/Desktop/flight_log.bin"
+    #BIN_FILE = "/home/ck/Desktop/flight_log.bin"
+    BIN_FILE = "fmcw2_bin_files/16bit_sync.bin"
+
 elif OPERATING_SYSTEM == 2:
     BIN_FILE = r"C:\Users\CK\Desktop\flight_log.bin"
 
@@ -58,7 +60,6 @@ TX_POWER_DBM_VOLT  = info[idx]; idx += 1
 HZ_PER_M           = read_u32_be(info, idx); idx += 4
 
 DATA_LOG           = info[idx]; idx += 1
-ADC_SELECT         = info[idx]; idx += 1
 USB_DATA_TYPE      = info[idx]; idx += 1
 ADC_BITS           = info[idx]; idx += 1
 

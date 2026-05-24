@@ -63,7 +63,6 @@ TX_POWER_DBM_VOLT  = info[idx]; idx += 1
 HZ_PER_M           = read_u32_be(info, idx); idx += 4
 
 DATA_LOG           = info[idx]; idx += 1
-ADC_SELECT         = info[idx]; idx += 1
 USB_DATA_TYPE      = info[idx]; idx += 1
 ADC_BITS           = info[idx]; idx += 1
 
