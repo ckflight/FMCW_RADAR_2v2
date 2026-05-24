@@ -108,7 +108,7 @@ def open_ftdi():
 
     return dev
 
-
+# sends config parameters to fpga
 def build_packet():
 
     packet = bytearray()
@@ -157,7 +157,7 @@ def build_packet():
 
     return bytes(packet)
 
-
+# writes to bin log file
 def build_info_sector():
 
     info = bytearray(INFO_SECTOR_SIZE)
@@ -233,6 +233,7 @@ else:
     f = open("record.bin", "wb")
     saved_name = "record.bin"
 
+# writes to bin file
 f.write(build_info_sector())
 f.flush()
 
