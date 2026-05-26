@@ -16,14 +16,19 @@ import matplotlib.pyplot as plt
 
 OPERATING_SYSTEM = 1   # 1 = Ubuntu/Linux, 2 = Windows
 
-USE_SYNC_HEADERS = False   # True = old sync logs, False = current no-sync logs
+USE_SYNC_HEADERS = True   # True = old sync logs, False = current no-sync logs
 SYNC = 0xC8C8
+
+CHIRP_STEP = 10   # 1 = every chirp, 2 = every 2nd chirp, 4 = every 4th chirp
+
+REMOVE_DC = True
+REMOVE_FIRST_N_BINS = 1
 
 if OPERATING_SYSTEM == 1:
     #BIN_FILE = "/home/ck/Desktop/flight_log.bin"
-    BIN_FILE = "fmcw2_bin_files/corridore_run_att.bin"
+    #BIN_FILE = "fmcw2_bin_files/corridore_run_att.bin"
     BIN_FILE = "fmcw2_bin_files/10bit_64_sync_salon_run_tx3db_rx6db.bin"
-    BIN_FILE = "Radar_Records/data_record.bin"
+    #BIN_FILE = "Radar_Records/data_record.bin"
 
 elif OPERATING_SYSTEM == 2:
     BIN_FILE = r"C:\Users\CK\Desktop\flight_log.bin"
@@ -249,8 +254,10 @@ if FULL_CPI_COUNT == 0:
 
 print(f"FULL CPI COUNT     : {FULL_CPI_COUNT}")
 
+DISPLAY_CPI_COUNT = (FULL_CPI_COUNT + CHIRP_STEP - 1) // CHIRP_STEP
+
 # for waterfall
-waterfall = np.zeros((FULL_CPI_COUNT, len(range_m)), dtype=np.float32)
+waterfall = np.zeros((DISPLAY_CPI_COUNT, len(range_m)), dtype=np.float32)
 
 plt.ion()
 fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(10, 10))
@@ -264,13 +271,13 @@ ax1.set_title("Range Profile (CPI)")
 ax1.grid(True)
 
 # 2 → Waterfall Plot
-waterfall = np.zeros((FULL_CPI_COUNT, len(range_m)), dtype=np.float32)
+waterfall = np.zeros((DISPLAY_CPI_COUNT, len(range_m)), dtype=np.float32)
 
 img = ax2.imshow(
     np.zeros_like(waterfall),
     aspect='auto',
     origin='lower',
-    extent=[range_m[0], range_m[-1], 0, FULL_CPI_COUNT]
+    extent=[range_m[0], range_m[-1], 0, DISPLAY_CPI_COUNT]
 )
 ax2.set_xlabel("Range")
 ax2.set_ylabel("CPI index")
@@ -288,7 +295,7 @@ ax3.set_xlabel("Range bin")
 ax3.set_ylabel("Doppler bin")
 ax3.set_title("Range-Doppler")
 
-for cpi_idx in range(FULL_CPI_COUNT):
+for cpi_idx in range(0, FULL_CPI_COUNT, CHIRP_STEP):
 
     # Extract one CPI
     start = cpi_idx * CHIRPS_PER_CPI
@@ -297,9 +304,16 @@ for cpi_idx in range(FULL_CPI_COUNT):
     # 2d array of chirps of each cpi so 128 x 930 array
     chirps_cpi = chirps[start:end]
 
+    # Remove DC from each chirp
+    if REMOVE_DC:
+        chirps_cpi = chirps_cpi - np.mean(chirps_cpi, axis=1, keepdims=True)
+
     # FFT over each chirp (fast-time) 
     # 128 x 930 --FFT--> 128 x 446
     chirps_fft = np.fft.rfft(chirps_cpi, axis=1)
+
+    # Remove first bins
+    chirps_fft[:, :REMOVE_FIRST_N_BINS] = 0
 
     # Take slow time FFT (on each column) over 2D fast time FFT result array
     doppler_fft = np.fft.fft(chirps_fft, axis=0) # doppler_fft 2D array has gain of 20log(128) = 42 dB
@@ -321,7 +335,8 @@ for cpi_idx in range(FULL_CPI_COUNT):
     #IMPORTANT NOTE: If i take the average of the doppler_fft as do to chirps_fft the gain again becomes 21 dB
 
     # Add to waterfall array
-    waterfall[cpi_idx, :] = avg_range
+    display_idx = cpi_idx // CHIRP_STEP
+    waterfall[display_idx, :] = avg_range
 
     # --- update 1D plot ---
     
@@ -351,7 +366,7 @@ for cpi_idx in range(FULL_CPI_COUNT):
     # update color scaling so contrast becomes visible
     img.set_clim(np.max(waterfall_db) - 25, np.max(waterfall_db))
     ax2.set_xlim(0, MAX_RANGE_DISPLAY)
-    ax2.set_ylim(0, FULL_CPI_COUNT)
+    ax2.set_ylim(0, DISPLAY_CPI_COUNT)
 
     # --- update range-doppler ---
     img_rd.set_data(rd_map_limited)

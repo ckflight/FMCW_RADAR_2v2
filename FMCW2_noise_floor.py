@@ -7,27 +7,27 @@ from pathlib import Path
 
 OPERATING_SYSTEM = 1   # 1 = Ubuntu/Linux, 2 = Windows
 
-USE_SYNC_HEADERS = False   # True = old sync logs, False = current no-sync logs
+USE_SYNC_HEADERS = True   # True = old sync logs, False = current no-sync logs
 SYNC = 0xC8C8
 
 if OPERATING_SYSTEM == 1:
     #BIN_FILE = "/home/ck/Desktop/flight_log.bin"
     BIN_FILE = "fmcw2_bin_files/salon_run_att.bin"
     BIN_FILE = "fmcw2_bin_files/10bit_64_sync_salon_run_tx3db_rx6db.bin"
-    BIN_FILE = "Radar_Records/data_record.bin"
+    #BIN_FILE = "Radar_Records/data_record.bin"
 
 elif OPERATING_SYSTEM == 2:
     BIN_FILE = r"C:\Users\CK\Desktop\flight_log.bin"
 
 START_CHIRP = 0
 END_CHIRP = None
-CHIRP_STEP = 1
+CHIRP_STEP = 100
 FRAME_DELAY = 0.001
 
 REMOVE_DC = True
 USE_WINDOW = True
 
-IGNORE_FIRST_BINS = 5
+IGNORE_FIRST_BINS = 0
 NOISE_PERCENTILE = 20
 
 INFO_SECTOR_SIZE = 512
@@ -100,38 +100,40 @@ def u32_be(buf, off):
 
 def parse_bin_info(raw512):
     p = {}
-
-    names = [
-        "RECORD_COUNTER",
-        "RECORD_TIME",
-        "SWEEP_TIME_US",
-        "SWEEP_GAP_US",
-        "SWEEP_START",
-        "SWEEP_BW",
-        "SAMPLING_FREQUENCY",
-        "NUMBER_OF_SAMPLES",
-        "HZ_PER_M",
-    ]
-
     idx = 0
-    for name in names:
-        p[name] = u32_be(raw512, idx)
-        idx += 4
 
-    p.setdefault("TX_MODE", 0)
-    p.setdefault("TX_POWER_DBM", 0)
-    p.setdefault("TX_POWER_DBM_VOLTAGE", 0)
-    p.setdefault("DATA_LOG", 1)
-    p.setdefault("USB_DATA_TYPE", 1)
-    p.setdefault("ADC_RESOLUTION", 16)
-    p.setdefault("PHASE_DISTANCE", 0)
-    p.setdefault("CPI_CHIRP", 1)
+    p["RECORD_COUNTER"] = u32_be(raw512, idx); idx += 4
+    p["RECORD_TIME"] = u32_be(raw512, idx); idx += 4
+    p["SWEEP_TIME_US"] = u32_be(raw512, idx); idx += 4
+    p["SWEEP_GAP_US"] = u32_be(raw512, idx); idx += 4
+
+    p["SWEEP_START"] = u32_be(raw512, idx) * 1e7; idx += 4
+    p["SWEEP_BW"] = u32_be(raw512, idx) * 1e6; idx += 4
+    p["SAMPLING_FREQUENCY"] = u32_be(raw512, idx) * 1000; idx += 4
+
+    p["NUMBER_OF_SAMPLES"] = u32_be(raw512, idx); idx += 4
+
+    p["TX_MODE"] = raw512[idx]; idx += 1
+    p["TX_POWER_DBM"] = raw512[idx]; idx += 1
+    p["TX_POWER_DBM_VOLTAGE"] = raw512[idx]; idx += 1
+
+    p["HZ_PER_M"] = u32_be(raw512, idx); idx += 4
+
+    p["DATA_LOG"] = raw512[idx]; idx += 1
+    p["USB_DATA_TYPE"] = raw512[idx]; idx += 1
+    p["ADC_RESOLUTION"] = raw512[idx]; idx += 1
+
+    p["CHIRP_END_TIMER_US"] = u32_be(raw512, idx); idx += 4
+    p["CPI_END_TIMER_US"] = u32_be(raw512, idx); idx += 4
+    p["CARD_WRITE_END_TIMER_US"] = u32_be(raw512, idx); idx += 4
+
+    p["CPI_CHIRP"] = (raw512[idx] << 8) | raw512[idx + 1]; idx += 2
+    p["CPI_COUNTER"] = u32_be(raw512, idx); idx += 4
+
+    p["PHASE_DISTANCE"] = 0
 
     date_bytes = raw512[64:128].split(b"\x00")[0]
-    try:
-        p["RECORD_DATE"] = date_bytes.decode("ascii", errors="ignore").strip()
-    except Exception:
-        p["RECORD_DATE"] = ""
+    p["RECORD_DATE"] = date_bytes.decode("ascii", errors="ignore").strip()
 
     return p
 

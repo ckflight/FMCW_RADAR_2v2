@@ -5,14 +5,19 @@ import matplotlib.pyplot as plt
 
 OPERATING_SYSTEM = 1   # 1 = Ubuntu/Linux, 2 = Windows
 
-USE_SYNC_HEADERS = False   # True = old sync logs, False = current no-sync logs
+USE_SYNC_HEADERS = True   # True = old sync logs, False = current no-sync logs
 SYNC = 0xC8C8
+
+CHIRP_STEP = 10   # 1 = every chirp, 2 = every 2nd chirp, 4 = every 4th chirp
+
+REMOVE_DC = True
+REMOVE_FIRST_N_BINS = 5
 
 if OPERATING_SYSTEM == 1:
     #BIN_FILE = "/home/ck/Desktop/flight_log.bin"
-    BIN_FILE = "fmcw2_bin_files/corridore_run_att.bin"
+    #BIN_FILE = "fmcw2_bin_files/corridore_run_att.bin"
     BIN_FILE = "fmcw2_bin_files/10bit_64_sync_salon_run_tx3db_rx6db.bin"
-    BIN_FILE = "Radar_Records/data_record.bin"
+    #BIN_FILE = "Radar_Records/data_record.bin"
 
 elif OPERATING_SYSTEM == 2:
     BIN_FILE = r"C:\Users\CK\Desktop\flight_log.bin"
@@ -212,6 +217,7 @@ if num_chirps == 0:
     raise RuntimeError("No valid chirps found")
 
 FULL_CPI_COUNT = num_chirps // CHIRPS_PER_CPI
+DISPLAY_CPI_COUNT = FULL_CPI_COUNT // CHIRP_STEP
 
 if FULL_CPI_COUNT == 0:
     raise RuntimeError("Not enough chirps for one full CPI")
@@ -265,7 +271,7 @@ cg = np.sum(w) / SAMPLES_PER_CHIRP
 # -----------------------------
 # Plot setup
 # -----------------------------
-waterfall = np.full((FULL_CPI_COUNT, len(range_m)), -160.0, dtype=np.float32)
+waterfall = np.full((DISPLAY_CPI_COUNT, len(range_m)), -160.0, dtype=np.float32)
 
 plt.ion()
 fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(10, 10))
@@ -282,7 +288,7 @@ img = ax2.imshow(
     waterfall[:, range_mask],
     aspect="auto",
     origin="lower",
-    extent=[range_m_limited[0], range_m_limited[-1], 0, FULL_CPI_COUNT]
+    extent=[range_m_limited[0], range_m_limited[-1], 0, DISPLAY_CPI_COUNT]
 )
 ax2.set_xlabel("Range (m)")
 ax2.set_ylabel("CPI index")
@@ -311,7 +317,7 @@ ax3.set_xlim(0, MAX_RANGE_DISPLAY)
 # -----------------------------
 # CPI processing
 # -----------------------------
-for cpi_idx in range(FULL_CPI_COUNT):
+for cpi_idx in range(0, FULL_CPI_COUNT, CHIRP_STEP):
 
     start = cpi_idx * CHIRPS_PER_CPI
     end = start + CHIRPS_PER_CPI
@@ -319,7 +325,8 @@ for cpi_idx in range(FULL_CPI_COUNT):
     chirps_cpi = chirps[start:end]
 
     # Remove DC per chirp
-    chirps_cpi = chirps_cpi - np.mean(chirps_cpi, axis=1, keepdims=True)
+    if REMOVE_DC:
+        chirps_cpi = chirps_cpi - np.mean(chirps_cpi, axis=1, keepdims=True)
 
     # Window
     chirps_cpi_w = chirps_cpi * w
@@ -334,7 +341,7 @@ for cpi_idx in range(FULL_CPI_COUNT):
     chirps_fft = chirps_fft / (SAMPLES_PER_CHIRP * cg / 2)
 
     # Suppress DC / close leakage bins
-    chirps_fft[:, :5] = 0.0
+    chirps_fft[:, :REMOVE_FIRST_N_BINS] = 0.0
 
     # Non-coherent integration over chirps
     avg_power = np.mean(np.abs(chirps_fft) ** 2, axis=0)
@@ -356,8 +363,9 @@ for cpi_idx in range(FULL_CPI_COUNT):
         f"noise floor = {noise_floor_dbfs:.2f} dBFS/bin"
     )
 
-    waterfall[cpi_idx, :] = avg_range_dbfs
-
+    display_idx = cpi_idx // CHIRP_STEP
+    waterfall[display_idx, :] = avg_range_dbfs
+    
     # Range-Doppler    
     doppler_fft = np.fft.fft(chirps_fft, axis=0)
 
@@ -387,7 +395,7 @@ for cpi_idx in range(FULL_CPI_COUNT):
     # Update waterfall
     waterfall_limited = waterfall[:, range_mask]
     img.set_data(waterfall_limited)
-    img.set_clim(np.max(waterfall_limited) - 35, np.max(waterfall_limited))
+    img.set_clim(np.max(waterfall_limited) - 50, np.max(waterfall_limited))
 
     # Update range-Doppler
     img_rd.set_data(rd_map_limited)

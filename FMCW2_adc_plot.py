@@ -5,14 +5,16 @@ import matplotlib.pyplot as plt
 
 OPERATING_SYSTEM = 1   # 1 = Ubuntu/Linux, 2 = Windows
 
-USE_SYNC_HEADERS = False   # True = old sync logs, False = current no-sync logs
+USE_SYNC_HEADERS = True   # True = old sync logs, False = current no-sync logs
 SYNC = 0xC8C8
+
+CHIRP_STEP = 10   # 1 = every chirp, 2 = every 2nd chirp, 4 = every 4th chirp
 
 if OPERATING_SYSTEM == 1:
     #BIN_FILE = "/home/ck/Desktop/flight_log.bin"
     #BIN_FILE = "fmcw2_bin_files/terrace_no_movement_att.bin"
-    #BIN_FILE = "fmcw2_bin_files/10bit_64_sync_salon_no_movement_for_phase_tx3db_rx6db.bin"
-    BIN_FILE = "Radar_Records/data_record.bin"
+    BIN_FILE = "fmcw2_bin_files/10bit_64_sync_salon_run_tx3db_rx6db.bin"
+    #BIN_FILE = "Radar_Records/data_record.bin"
 
 elif OPERATING_SYSTEM == 2:
     BIN_FILE = r"C:\Users\CK\Desktop\flight_log.bin"
@@ -191,7 +193,7 @@ print(f"Peak dBFS     : {adc_dbfs.max():.2f} dBFS")
 plt.ion()
 fig, ax = plt.subplots(figsize=(10, 6))
 
-for cpi_idx in range(FULL_CPI_COUNT):
+for cpi_idx in range(0, FULL_CPI_COUNT, CHIRP_STEP):
     start = cpi_idx * CHIRPS_PER_CPI
     end = start + CHIRPS_PER_CPI
 
