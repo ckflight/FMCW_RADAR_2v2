@@ -19,7 +19,7 @@ OPERATING_SYSTEM = 1   # 1 = Ubuntu/Linux, 2 = Windows
 USE_SYNC_HEADERS = True   # True = old sync logs, False = current no-sync logs
 SYNC = 0xC8C8
 
-CHIRP_STEP = 10   # 1 = every chirp, 2 = every 2nd chirp, 4 = every 4th chirp
+CHIRP_STEP = 1   # 1 = every chirp, 2 = every 2nd chirp, 4 = every 4th chirp
 
 REMOVE_DC = True
 REMOVE_FIRST_N_BINS = 1
@@ -34,7 +34,7 @@ elif OPERATING_SYSTEM == 2:
     BIN_FILE = r"C:\Users\CK\Desktop\flight_log.bin"
 
 INFO_SECTOR_SIZE        = 512
-MAX_RANGE_DISPLAY       = 40 # range upper plot limit in meters 
+MAX_RANGE_DISPLAY       = 200 # range upper plot limit in meters 
 
 def read_u32_be(buf, offset):
     return ((buf[offset] << 24) |
@@ -247,6 +247,8 @@ chirps = adc_raw.astype(np.float32) - ADC_CENTER
 freq_hz = np.fft.rfftfreq(SAMPLES_PER_CHIRP, d=1.0 / FS)
 range_m = freq_hz / HZ_PER_M
 
+range_m *= 8
+
 FULL_CPI_COUNT = num_chirps // CHIRPS_PER_CPI
 
 if FULL_CPI_COUNT == 0:
@@ -371,7 +373,7 @@ for cpi_idx in range(0, FULL_CPI_COUNT, CHIRP_STEP):
     # --- update range-doppler ---
     img_rd.set_data(rd_map_limited)
     # dynamic scaling
-    img_rd.set_clim(np.max(rd_map) - 35, np.max(rd_map))
+    img_rd.set_clim(np.max(rd_map) - 20, np.max(rd_map))
     ax3.set_title(f"Range-Doppler (CPI {cpi_idx+1})")
 
     fig.canvas.draw_idle()

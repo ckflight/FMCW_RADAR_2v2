@@ -23,7 +23,7 @@ elif OPERATING_SYSTEM == 2:
     BIN_FILE = r"C:\Users\CK\Desktop\flight_log.bin"
 
 INFO_SECTOR_SIZE  = 512
-MAX_RANGE_DISPLAY = 350 # if > abs max distance then abs max is displayed.
+MAX_RANGE_DISPLAY = 30 # if > abs max distance then abs max is displayed.
 
 NOISE_RANGE_MIN = 0
 NOISE_RANGE_MAX = MAX_RANGE_DISPLAY
@@ -166,10 +166,6 @@ print(f"DATA_RATE           : {CONFIGURED_DATA_RATE_MBPS:.2f} MB/s")
 print("\n----- SD WRITE -----")
 print(f"WRITE_SPEED         : {CARD_WRITE_SPEED_MBPS:.2f} MB/s")
 
-
-# -----------------------------
-# Read ADC data
-# -----------------------------
 # -----------------------------
 # Read ADC data
 # -----------------------------
@@ -395,7 +391,7 @@ for cpi_idx in range(0, FULL_CPI_COUNT, CHIRP_STEP):
     # Update waterfall
     waterfall_limited = waterfall[:, range_mask]
     img.set_data(waterfall_limited)
-    img.set_clim(np.max(waterfall_limited) - 50, np.max(waterfall_limited))
+    img.set_clim(np.max(waterfall_limited) - 40, np.max(waterfall_limited))
 
     # Update range-Doppler
     img_rd.set_data(rd_map_limited)

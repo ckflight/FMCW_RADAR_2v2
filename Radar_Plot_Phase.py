@@ -5,7 +5,7 @@ from scipy.signal import lfilter
 
 FIR_SMOOTHING_N     = 40 # higher is smoother
 
-record_file = open("Radar_Records/radar2v2_horn_fc48k_600_phase_heartbeat_breath.txt", "r")
+record_file = open("Radar_Records/radar2v2_horn_48kHz_2026_01_09_21_04_59_phase.txt", "r")
 line_counter = 0
 
 data = str(record_file.readline())
@@ -87,6 +87,10 @@ data = str(record_file.readline())
 line_counter += 1
 PHASE_DISTANCE = int(data[0:len(data) - 1])
 print("Phase Distance : ", str(PHASE_DISTANCE))
+
+CHIRP_NUMBER = str(record_file.readline())
+line_counter += 1
+print("Chirp Number: ", str(CHIRP_NUMBER))
 
 RECORD_DATE = str(record_file.readline())
 line_counter += 1

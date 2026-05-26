@@ -6,13 +6,13 @@ import struct
 # SETTINGS
 # =========================================================
 
-FILENAME = "record.bin"
+FILENAME = "fmcw3_bin_files/250khz_900mhz.bin"
 
-INTEGRATION_CHIRPS = 128      # software CPI size: 32, 64, 128, etc.
-BLOCK_STEP = 128              # 128 = no overlap, 1 = sliding integration
+INTEGRATION_CHIRPS = 256      # software CPI size: 32, 64, 128, etc.
+BLOCK_STEP = 256              # 128 = no overlap, 1 = sliding integration
 
 USE_LOG_MAX_DISTANCE = True # plots calcualted max distance by fs and hz/m
-MAX_RANGE_DISPLAY = 125 # user selected range if USE_LOG_MAX_DISTANCE = False
+MAX_RANGE_DISPLAY = 100 # user selected range if USE_LOG_MAX_DISTANCE = False
 
 REMOVE_DC = True
 USE_WINDOW = True
@@ -352,10 +352,10 @@ for block_idx in range(num_blocks):
     ax_range_b.set_ylim(np.max(integrated_b_limited) - 80, np.max(integrated_b_limited) + 5)
 
     img_waterfall.set_data(waterfall_a)
-    img_waterfall.set_clim(np.max(waterfall_a) - 50, np.max(waterfall_a))
+    img_waterfall.set_clim(np.max(waterfall_a) - 40, np.max(waterfall_a))
 
     img_rd.set_data(rd_a_limited)
-    img_rd.set_clim(np.max(rd_a_limited) - 50, np.max(rd_a_limited))
+    img_rd.set_clim(np.max(rd_a_limited) - 40, np.max(rd_a_limited))
 
     fig.suptitle(
         f"Software CPI {block_idx + 1}/{num_blocks} | "

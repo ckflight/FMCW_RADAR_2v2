@@ -71,6 +71,10 @@ print("ADC Resolution : ", ADC_RESOLUTION)
 PHASE_DISTANCE      = read_int_line(record_file)
 print("Phase Distance : ", PHASE_DISTANCE)
 
+CHIRP_NUMBER = str(record_file.readline())
+line_counter += 1
+print("Chirp Number: ", str(CHIRP_NUMBER))
+
 RECORD_DATE         = record_file.readline().rstrip("\n")
 print("Date: ", RECORD_DATE)
 
