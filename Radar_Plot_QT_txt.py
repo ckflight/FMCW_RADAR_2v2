@@ -645,7 +645,7 @@ class DataSource(QtCore.QObject):
 
                     # 16 bit raw adc data
                     elif USB_DATA_TYPE == 1:
-                        current_sample_16bit = ((samples_hex[index] & 0xFF) << 8) | (samples_hex[index + 1] & 0xFF)
+                        current_sample_16bit = ((samples_hex[index+1] & 0xFF) << 8) | (samples_hex[index] & 0xFF)
                         current_sample_float = (current_sample_16bit / 2 ** ADC_RESOLUTION) * 3.3
 
                         index += 2

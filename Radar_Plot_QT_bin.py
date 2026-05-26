@@ -30,6 +30,7 @@ USE_FIR_FILTER      = 1
 REMOVE_CLUTTER      = 0
 FREQ_DIV            = 1
 FIR_SMOOTHING_N     = 100 # higher is smoother
+UPDATE_EVERY_N_CHIRPS = 1  # increase to 2, 5, 10 for faster UI playback
 
 BIN_FILE = "Radar_Records/data_record.bin"
 INFO_SECTOR_SIZE = 512
@@ -212,6 +213,16 @@ freq_sample_array_float = []  # scaled 3.3
 freq_sample_array_int = []  # 12 bit
 time_sample_array = []
 
+fft_sample_buffer_float = np.empty(FREQ_RANGE, dtype=np.float32)
+fft_sample_buffer_int = np.empty(FREQ_RANGE, dtype=np.float32)
+time_sample_buffer = np.empty(TIME_NUM_LINE_POINTS, dtype=np.float32)
+
+fft_sample_count = 0
+time_sample_count = 0
+
+time_step_precomputed = np.linspace(0.0, float(TIME_MS / 1000), TIME_NUM_LINE_POINTS, dtype=np.float32)
+fft_window_precomputed = np.hamming(FREQ_RANGE).astype(np.float32)
+
 clutter_counter = 0
 fft_prev_array = np.zeros(FFT_NUM_LINE_POINTS)
 fft_current_array = np.zeros(FFT_NUM_LINE_POINTS)
@@ -239,8 +250,11 @@ def FFT_Calculate(sample_data_float, sample_data_int, sample_period):
     '''
 
     # FFt Calculation
-    w = np.hamming(len(sample_data_float))
-    sample_data1 = [sample_data_float[i] * w[i] for i in range(len(w))]
+    sample_data_float = np.asarray(sample_data_float, dtype=np.float32)
+    sample_data_int = np.asarray(sample_data_int, dtype=np.float32)
+
+    w = fft_window_precomputed
+    sample_data1 = sample_data_float * w
 
     fs = 0.5 / float(sample_period)
 
@@ -252,7 +266,7 @@ def FFT_Calculate(sample_data_float, sample_data_int, sample_period):
     fft_phs = np.angle(fft_, deg=True)
 
     # dbFs calculation
-    fft_dbFs = 20 * np.log10((2 * fft_abs) / len(fft_abs))
+    fft_dbFs = 20 * np.log10((2 * fft_abs) / len(fft_abs) + 1e-12)
 
     if USE_AVERAGE_FILTER == 1:
         fft_abs = Moving_Average_Filter(fft_abs, MOVING_AVERAGING_NUM)
@@ -270,9 +284,9 @@ def FFT_Calculate(sample_data_float, sample_data_int, sample_period):
 
     bins = len(fft_abs)
     f_step = fs / bins
-    fx = [f_step * i for i in range(0, bins)]
+    fx = np.arange(bins, dtype=np.float32) * f_step
 
-    return fx, fft_abs, fft_phs, fft_dbFs
+    return fx, fft_abs.astype(np.float32), fft_phs.astype(np.float32), fft_dbFs.astype(np.float32)
 
 
 class Controls(QtWidgets.QWidget):
@@ -614,6 +628,8 @@ class DataSource(QtCore.QObject):
         global clutter_counter
         global fft_prev_array
         global fft_current_array
+        global fft_sample_count
+        global time_sample_count
 
         while line_number_textFile < RECORD_COUNTER:
 
@@ -628,6 +644,8 @@ class DataSource(QtCore.QObject):
 
                 # Read info lines
                 clutter_counter = 0
+                fft_sample_count = 0
+                time_sample_count = 0
 
             if self._should_end:
                 print("Data source is told to stop")
@@ -638,81 +656,99 @@ class DataSource(QtCore.QObject):
             sample_float = chirps_float[line_number_textFile]
             sample_int = chirps_u16[line_number_textFile]
 
-            freq_sample_array_float.extend(sample_float.tolist())
-            freq_sample_array_int.extend(sample_int.tolist())
-            time_sample_array.extend(sample_float.tolist())
+            src_pos = 0
+            src_len = len(sample_float)
 
-            # Add another plot and try plotting with pointwise update from left to right
+            while src_pos < src_len:
 
-            # Plot Freq Line
-            if len(freq_sample_array_float) >= FREQ_RANGE:
+                copy_len = min(FREQ_RANGE - fft_sample_count, src_len - src_pos)
 
-                fft_input_float = freq_sample_array_float[:FREQ_RANGE]
-                fft_input_int = freq_sample_array_int[:FREQ_RANGE]
+                fft_sample_buffer_float[fft_sample_count:fft_sample_count + copy_len] = sample_float[src_pos:src_pos + copy_len]
+                fft_sample_buffer_int[fft_sample_count:fft_sample_count + copy_len] = sample_int[src_pos:src_pos + copy_len]
 
-                fft_freq, fft_magnitude, fft_phase, fft_dbFs = FFT_Calculate(fft_input_float,
-                                                                             fft_input_int,
-                                                                             1 / SAMPLING_FREQUENCY)
+                fft_sample_count += copy_len
+                src_pos += copy_len
 
-                if UPDATE_PHASE_PLOT:
-                    self._freq_domain_phase[:, 0] = fft_freq  # freq values from 0 to 1/2 samplig freq
-                    self._freq_domain_phase[:, 1] = fft_phase  # amplitude values of each freq
+                # Add another plot and try plotting with pointwise update from left to right
 
-                if UPDATE_DBFS_PLOT:
-                    self._freq_domain_dbFs[:, 0] = fft_freq  # freq values from 0 to 1/2 samplig freq
-                    self._freq_domain_dbFs[:, 1] = fft_dbFs  # amplitude values of each freq
+                # Plot Freq Line
+                if fft_sample_count >= FREQ_RANGE:
 
-                if REMOVE_CLUTTER == 1:
+                    fft_freq, fft_magnitude, fft_phase, fft_dbFs = FFT_Calculate(fft_sample_buffer_float,
+                                                                                 fft_sample_buffer_int,
+                                                                                 1 / SAMPLING_FREQUENCY)
 
-                    if clutter_counter == 0:
-                        fft_prev_array = fft_magnitude
-                        clutter_counter = clutter_counter + 1
-                    else:
-                        fft_current_array = fft_magnitude - fft_prev_array
+                    if UPDATE_PHASE_PLOT:
+                        self._freq_domain_phase[:, 0] = fft_freq  # freq values from 0 to 1/2 samplig freq
+                        self._freq_domain_phase[:, 1] = fft_phase  # amplitude values of each freq
 
-                        # subtraction makes negative amplitude so i make them zero
-                        fft_current_array = np.where(fft_current_array < 0, 0, fft_current_array)
+                    if UPDATE_DBFS_PLOT:
+                        self._freq_domain_dbFs[:, 0] = fft_freq  # freq values from 0 to 1/2 samplig freq
+                        self._freq_domain_dbFs[:, 1] = fft_dbFs  # amplitude values of each freq
 
-                        fft_prev_array = fft_magnitude
+                    if REMOVE_CLUTTER == 1:
 
-                        clutter_counter = clutter_counter + 1
+                        if clutter_counter == 0:
+                            fft_prev_array = fft_magnitude
+                            clutter_counter = clutter_counter + 1
+                        else:
+                            fft_current_array = fft_magnitude - fft_prev_array
 
-                    if clutter_counter > 0:
+                            # subtraction makes negative amplitude so i make them zero
+                            fft_current_array = np.where(fft_current_array < 0, 0, fft_current_array)
+
+                            fft_prev_array = fft_magnitude
+
+                            clutter_counter = clutter_counter + 1
+
+                        if clutter_counter > 0:
+
+                            if UPDATE_FFT_PLOT:
+                                self._freq_domain_magnitude[:, 0] = fft_freq  # freq values from 0 to 1/2 samplig freq
+                                self._freq_domain_magnitude[:, 1] = fft_current_array  # amplitude values of each freq
+
+                    elif REMOVE_CLUTTER == 0:
 
                         if UPDATE_FFT_PLOT:
                             self._freq_domain_magnitude[:, 0] = fft_freq  # freq values from 0 to 1/2 samplig freq
-                            self._freq_domain_magnitude[:, 1] = fft_current_array  # amplitude values of each freq
+                            self._freq_domain_magnitude[:, 1] = fft_magnitude  # amplitude values of each freq
 
-                elif REMOVE_CLUTTER == 0:
+                    fft_sample_count = 0
 
-                    if UPDATE_FFT_PLOT:
-                        self._freq_domain_magnitude[:, 0] = fft_freq  # freq values from 0 to 1/2 samplig freq
-                        self._freq_domain_magnitude[:, 1] = fft_magnitude  # amplitude values of each freq
+            src_pos = 0
+            src_len = len(sample_float)
 
-                del freq_sample_array_float[:FREQ_RANGE]
-                del freq_sample_array_int[:FREQ_RANGE]
+            while src_pos < src_len:
 
-            # Plot Time Line
-            if len(time_sample_array) >= TIME_NUM_LINE_POINTS:
-                time_step = np.linspace(0.0, float(TIME_MS / 1000), TIME_NUM_LINE_POINTS)
+                copy_len = min(TIME_NUM_LINE_POINTS - time_sample_count, src_len - src_pos)
 
-                if UPDATE_TIME_PLOT:
-                    self._time_domain_data[:, 0] = time_step
-                    self._time_domain_data[:, 1] = time_sample_array[:TIME_NUM_LINE_POINTS]
+                time_sample_buffer[time_sample_count:time_sample_count + copy_len] = sample_float[src_pos:src_pos + copy_len]
 
-                del time_sample_array[:TIME_NUM_LINE_POINTS]
+                time_sample_count += copy_len
+                src_pos += copy_len
+
+                # Plot Time Line
+                if time_sample_count >= TIME_NUM_LINE_POINTS:
+
+                    if UPDATE_TIME_PLOT:
+                        self._time_domain_data[:, 0] = time_step_precomputed
+                        self._time_domain_data[:, 1] = time_sample_buffer
+
+                    time_sample_count = 0
 
             line_number_textFile += 1
 
-            data_dict = {
-                "time": self._time_domain_data,
-                "freq_magnitude": self._freq_domain_magnitude,
-                "freq_phase": self._freq_domain_phase,
-                "freq_dbFs": self._freq_domain_dbFs,
-            }
+            if line_number_textFile % UPDATE_EVERY_N_CHIRPS == 0:
 
-            self.new_data.emit(data_dict)
-            # print("Data creation")
+                data_dict = {
+                    "time": self._time_domain_data,
+                    "freq_magnitude": self._freq_domain_magnitude,
+                    "freq_phase": self._freq_domain_phase,
+                    "freq_dbFs": self._freq_domain_dbFs,
+                }
+
+                self.new_data.emit(data_dict)
+                # print("Data creation")
 
             if line_number_textFile == RECORD_COUNTER:
                 line_number_textFile = 0
@@ -720,6 +756,9 @@ class DataSource(QtCore.QObject):
                 freq_sample_array_float.clear()
                 freq_sample_array_int.clear()
                 time_sample_array.clear()
+                fft_sample_count = 0
+                time_sample_count = 0
+                print("dsfsafsafdasfadfasdfsdafsafsaf")
 
         print("Data source finishing")
         self.finished.emit()
