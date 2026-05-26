@@ -3,8 +3,13 @@ import matplotlib.pyplot as plt
 
 OPERATING_SYSTEM = 1   # 1 = Ubuntu/Linux, 2 = Windows
 
+USE_SYNC_HEADERS = False   # True = old sync logs, False = current no-sync logs
+SYNC = 0xC8C8
+
 if OPERATING_SYSTEM == 1:
-    BIN_FILE = "/home/ck/Desktop/flight_log.bin"
+    #BIN_FILE = "/home/ck/Desktop/flight_log.bin"
+    BIN_FILE = "fmcw2_bin_files/terrace_no_movement_att.bin"
+    #BIN_FILE = "fmcw2_bin_files/10bit_64_sync_salon_no_movement_for_phase_tx3db_rx6db.bin"
 elif OPERATING_SYSTEM == 2:
     BIN_FILE = r"C:\Users\CK\Desktop\flight_log.bin"
 
@@ -113,24 +118,44 @@ print(f"CPI_COUNTER         : {CPI_COUNTER}")
 # -----------------------------
 data_u16 = np.frombuffer(raw_data, dtype="<u2")
 
-SYNC = 0xC8C8
-
-sync_idx = np.where(data_u16[:-1] == SYNC)[0]
-
 chirps = []
 
-for i in sync_idx:
+if USE_SYNC_HEADERS:
 
-    if data_u16[i + 1] == SYNC:
+    sync_idx = np.where(
+        (data_u16[:-1] == SYNC) &
+        (data_u16[1:] == SYNC)
+    )[0]
+
+    for i in sync_idx:
 
         chirp = data_u16[i + 2 : i + 2 + SAMPLES_PER_CHIRP]
 
         if len(chirp) == SAMPLES_PER_CHIRP:
             chirps.append(chirp)
 
-chirps = np.array(chirps)
+    chirps = np.array(chirps)
 
-num_chirps = len(chirps)
+    num_chirps = len(chirps)
+
+    print("SYNCED CHIRPS:", num_chirps)
+
+else:
+
+    usable_samples = (len(data_u16) // SAMPLES_PER_CHIRP) * SAMPLES_PER_CHIRP
+    unused_samples = len(data_u16) - usable_samples
+
+    data_u16 = data_u16[:usable_samples]
+
+    chirps = data_u16.reshape(-1, SAMPLES_PER_CHIRP)
+
+    num_chirps = len(chirps)
+
+    print("NO SYNC CHIRPS:", num_chirps)
+    print("UNUSED END SAMPLES:", unused_samples)
+
+if num_chirps == 0:
+    raise RuntimeError("No valid chirps found")
 
 print("\n----- DATA -----")
 print("Total samples :", len(data_u16))
@@ -148,6 +173,10 @@ chirps = chirps.astype(np.float32) - ADC_CENTER
 # -----------------------------
 num_cpis = num_chirps // CHIRPS_PER_CPI
 num_chirps_used = num_cpis * CHIRPS_PER_CPI
+
+if num_cpis == 0:
+    raise RuntimeError("Not enough chirps for one full CPI")
+
 chirps = chirps[:num_chirps_used]
 chirps_3d = chirps.reshape(num_cpis, CHIRPS_PER_CPI, SAMPLES_PER_CHIRP)
 
