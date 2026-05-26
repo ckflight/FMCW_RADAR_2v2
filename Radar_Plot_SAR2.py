@@ -83,6 +83,10 @@ data = str(record_file.readline()); line_counter += 1
 PHASE_DISTANCE = int(data[0:len(data) - 1])
 print("Phase Distance:", PHASE_DISTANCE)
 
+CHIRP_NUMBER = str(record_file.readline())
+line_counter += 1
+print("Chirp Number: ", str(CHIRP_NUMBER))
+
 RECORD_DATE = str(record_file.readline()); line_counter += 1
 print("Date:", RECORD_DATE)
 
@@ -94,8 +98,8 @@ speed = 2.0                 # tune this
 sample_increment = 1
 data_counter = 0
 
-dynamic_range = 50
-cross_range_padding = 2      # 1 raw, 2-4 smoother
+dynamic_range = 45
+cross_range_padding = 4      # 1 raw, 2-4 smoother
 ky_delta_spacing = 1.5      # smaller than 1.8 -> better focus usually
 window_fast = np.hanning
 window_slow = np.hanning
