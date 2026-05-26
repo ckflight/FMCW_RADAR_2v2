@@ -5,8 +5,11 @@ import matplotlib.pyplot as plt
 
 OPERATING_SYSTEM = 1   # 1 = Ubuntu/Linux, 2 = Windows
 
+USE_SYNC_HEADERS = True   # True = old sync logs, False = current no-sync logs
+SYNC = 0xC8C8
+
 if OPERATING_SYSTEM == 1:
-    BIN_FILE = "/home/ck/Desktop/flight_log.bin"
+    BIN_FILE = "fmcw2_bin_files/10bit_sync.bin"
 elif OPERATING_SYSTEM == 2:
     BIN_FILE = r"C:\Users\CK\Desktop\flight_log.bin"
 
@@ -107,8 +110,8 @@ if (CPI_END_TIMER_US + CARD_WRITE_END_TIMER_US) > 0:
 # -----------------------------
 BYTES_PER_SAMPLE = 2
 
-num_chirps = CPI_COUNTER * CHIRPS_PER_CPI
-expected_samples = num_chirps * SAMPLES_PER_CHIRP
+num_chirps_expected = CPI_COUNTER * CHIRPS_PER_CPI
+expected_samples = num_chirps_expected * SAMPLES_PER_CHIRP
 expected_bytes = expected_samples * BYTES_PER_SAMPLE
 
 BYTES_PER_CHIRP = SAMPLES_PER_CHIRP * BYTES_PER_SAMPLE
@@ -144,7 +147,7 @@ print("\n----- CPI -----")
 print(f"CHIRPS_PER_CPI      : {CHIRPS_PER_CPI}")
 print(f"CPI_RATE            : {CPI_RATE_HZ:.2f} Hz")
 print(f"CPI_COUNTER         : {CPI_COUNTER}")
-print(f"NUM_CHIRPS          : {num_chirps}")
+print(f"NUM_CHIRPS          : {num_chirps_expected}")
 
 print("\n----- DATA -----")
 print(f"BYTES_PER_CHIRP     : {BYTES_PER_CHIRP}")
@@ -165,26 +168,51 @@ raw_data = file_bytes[INFO_SECTOR_SIZE:]
 
 data_u16 = np.frombuffer(raw_data, dtype="<u2")
 
-SYNC = 0xC8C8
-
-sync_idx = np.where(data_u16[:-1] == SYNC)[0]
-
 chirps = []
 
-for i in sync_idx:
+if USE_SYNC_HEADERS:
 
-    if data_u16[i + 1] == SYNC:
+    sync_idx = np.where(
+        (data_u16[:-1] == SYNC) &
+        (data_u16[1:] == SYNC)
+    )[0]
+
+    for i in sync_idx:
 
         chirp = data_u16[i + 2 : i + 2 + SAMPLES_PER_CHIRP]
 
         if len(chirp) == SAMPLES_PER_CHIRP:
             chirps.append(chirp)
 
-chirps = np.array(chirps)
+    chirps = np.array(chirps)
 
-num_chirps = len(chirps)
+    num_chirps = len(chirps)
 
-print(f"SYNCED CHIRPS      : {num_chirps}")
+    print(f"SYNCED CHIRPS      : {num_chirps}")
+
+else:
+
+    usable_samples = (len(data_u16) // SAMPLES_PER_CHIRP) * SAMPLES_PER_CHIRP
+    unused_samples = len(data_u16) - usable_samples
+
+    data_u16 = data_u16[:usable_samples]
+
+    chirps = data_u16.reshape(-1, SAMPLES_PER_CHIRP)
+
+    num_chirps = len(chirps)
+
+    print(f"NO SYNC CHIRPS     : {num_chirps}")
+    print(f"UNUSED END SAMPLES : {unused_samples}")
+
+if num_chirps == 0:
+    raise RuntimeError("No valid chirps found")
+
+FULL_CPI_COUNT = num_chirps // CHIRPS_PER_CPI
+
+if FULL_CPI_COUNT == 0:
+    raise RuntimeError("Not enough chirps for one full CPI")
+
+print(f"FULL CPI COUNT     : {FULL_CPI_COUNT}")
 
 # Keep only valid ADC bits
 ADC_MASK = (1 << ADC_BITS) - 1
@@ -233,7 +261,7 @@ cg = np.sum(w) / SAMPLES_PER_CHIRP
 # -----------------------------
 # Plot setup
 # -----------------------------
-waterfall = np.full((num_chirps // CHIRPS_PER_CPI, len(range_m)), -160.0, dtype=np.float32)
+waterfall = np.full((FULL_CPI_COUNT, len(range_m)), -160.0, dtype=np.float32)
 
 plt.ion()
 fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(10, 10))
@@ -250,7 +278,7 @@ img = ax2.imshow(
     waterfall[:, range_mask],
     aspect="auto",
     origin="lower",
-    extent=[range_m_limited[0], range_m_limited[-1], 0, CPI_COUNTER]
+    extent=[range_m_limited[0], range_m_limited[-1], 0, FULL_CPI_COUNT]
 )
 ax2.set_xlabel("Range (m)")
 ax2.set_ylabel("CPI index")
@@ -279,7 +307,7 @@ ax3.set_xlim(0, MAX_RANGE_DISPLAY)
 # -----------------------------
 # CPI processing
 # -----------------------------
-for cpi_idx in range(CPI_COUNTER):
+for cpi_idx in range(FULL_CPI_COUNT):
 
     start = cpi_idx * CHIRPS_PER_CPI
     end = start + CHIRPS_PER_CPI
@@ -320,7 +348,7 @@ for cpi_idx in range(CPI_COUNTER):
         noise_floor_dbfs = np.median(avg_range_dbfs[10:])
 
     print(
-        f"CPI {cpi_idx + 1:4d}/{CPI_COUNTER}: "
+        f"CPI {cpi_idx + 1:4d}/{FULL_CPI_COUNT}: "
         f"noise floor = {noise_floor_dbfs:.2f} dBFS/bin"
     )
 
@@ -348,7 +376,7 @@ for cpi_idx in range(CPI_COUNTER):
     ax1.set_ylim(noise - 10, ymax + 5)
 
     ax1.set_title(
-        f"Chirp Integrated Range Profile - CPI {cpi_idx + 1}/{CPI_COUNTER} "
+        f"Chirp Integrated Range Profile - CPI {cpi_idx + 1}/{FULL_CPI_COUNT} "
         f"| Noise {noise_floor_dbfs:.2f} dBFS/bin"
     )
 
@@ -361,7 +389,7 @@ for cpi_idx in range(CPI_COUNTER):
     img_rd.set_data(rd_map_limited)
     img_rd.set_clim(np.max(rd_map_limited) - 40, np.max(rd_map_limited))
 
-    ax3.set_title(f"Range-Doppler Map - CPI {cpi_idx + 1}/{CPI_COUNTER}")
+    ax3.set_title(f"Range-Doppler Map - CPI {cpi_idx + 1}/{FULL_CPI_COUNT}")
 
     fig.canvas.draw_idle()
     plt.pause(0.01)

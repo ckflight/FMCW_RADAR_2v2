@@ -2,19 +2,28 @@ import numpy as np
 import matplotlib.pyplot as plt
 from pathlib import Path
 
-# this code works with both usb .tx or sdcard .bin file logged with radar2v2
+# This code works with both log files with snyc header or no sync header.
+# This code is for .bin files logged with radar2v2 sdcard
 
-#FILENAME = "/home/ck/Desktop/flight_log.bin" 
-FILENAME = "fmcw2_bin_files/10bit_sync.bin"
+OPERATING_SYSTEM = 1   # 1 = Ubuntu/Linux, 2 = Windows
 
-#FILENAME = "Radar_Records/radar2v2_horn_48kHz_2024_04_09_19_09_57_home_to_outside_buildings.txt"   
+USE_SYNC_HEADERS = True   # True = old sync logs, False = current no-sync logs
+SYNC = 0xC8C8
+
+if OPERATING_SYSTEM == 1:
+    #BIN_FILE = "/home/ck/Desktop/flight_log.bin"
+    BIN_FILE = "fmcw2_bin_files/salon_run_att.bin"
+    BIN_FILE = "fmcw2_bin_files/10bit_64_sync_salon_run_tx3db_rx6db.bin"
+
+elif OPERATING_SYSTEM == 2:
+    BIN_FILE = r"C:\Users\CK\Desktop\flight_log.bin"
 
 START_CHIRP = 0
 END_CHIRP = None
 CHIRP_STEP = 1
 FRAME_DELAY = 0.001
 
-REMOVE_DC = False
+REMOVE_DC = True
 USE_WINDOW = True
 
 IGNORE_FIRST_BINS = 5
@@ -22,9 +31,8 @@ NOISE_PERCENTILE = 20
 
 INFO_SECTOR_SIZE = 512
 
-# SD bin raw sample format after first 512 bytes
-BIN_SAMPLE_DTYPE = "<u2"      # STM32 SD log usually little-endian uint16
-BIN_CHIRP_HEADER_SAMPLES = 0  # set 1 if each chirp has 2-byte header
+BIN_SAMPLE_DTYPE = "<u2"
+BIN_CHIRP_HEADER_SAMPLES = 0
 
 # =========================================================
 # TXT INFO PARSER
@@ -109,7 +117,6 @@ def parse_bin_info(raw512):
         p[name] = u32_be(raw512, idx)
         idx += 4
 
-    # Optional/default fields for compatibility with txt print section
     p.setdefault("TX_MODE", 0)
     p.setdefault("TX_POWER_DBM", 0)
     p.setdefault("TX_POWER_DBM_VOLTAGE", 0)
@@ -192,6 +199,56 @@ def load_txt_record(filename):
     return info, np.array(chirps, dtype=np.int32), "USB TXT"
 
 
+def extract_chirps_with_sync(data, samples_per_chirp):
+    sync_idx = np.where(
+        (data[:-1] == SYNC) &
+        (data[1:] == SYNC)
+    )[0]
+
+    chirps = []
+
+    for idx in sync_idx:
+        start = idx + 2
+        end = start + samples_per_chirp
+
+        if end <= len(data):
+            chirp = data[start:end]
+
+            if len(chirp) == samples_per_chirp:
+                chirps.append(chirp)
+
+    chirps = np.array(chirps, dtype=np.int32)
+
+    print("\n----- SYNC MODE -----")
+    print(f"Sync word            : 0x{SYNC:04X}")
+    print(f"Found sync headers   : {len(sync_idx)}")
+    print(f"Valid synced chirps  : {len(chirps)}")
+
+    return chirps
+
+
+def extract_chirps_without_sync(data, samples_per_chirp):
+    total_samples_per_chirp = samples_per_chirp + BIN_CHIRP_HEADER_SAMPLES
+
+    usable_samples = (len(data) // total_samples_per_chirp) * total_samples_per_chirp
+    unused_samples = len(data) - usable_samples
+
+    data = data[:usable_samples]
+
+    chirps_raw = data.reshape(-1, total_samples_per_chirp)
+
+    if BIN_CHIRP_HEADER_SAMPLES > 0:
+        chirps = chirps_raw[:, BIN_CHIRP_HEADER_SAMPLES:]
+    else:
+        chirps = chirps_raw
+
+    print("\n----- NO SYNC MODE -----")
+    print(f"Continuous chirps    : {len(chirps)}")
+    print(f"Unused end samples   : {unused_samples}")
+
+    return chirps.astype(np.int32)
+
+
 def load_bin_record(filename):
     with open(filename, "rb") as f:
         raw = f.read()
@@ -202,24 +259,23 @@ def load_bin_record(filename):
     info = parse_bin_info(raw[:INFO_SECTOR_SIZE])
 
     samples_per_chirp = int(info["NUMBER_OF_SAMPLES"])
-    total_samples_per_chirp = samples_per_chirp + BIN_CHIRP_HEADER_SAMPLES
 
-    data = np.frombuffer(raw[INFO_SECTOR_SIZE:], dtype=np.dtype(BIN_SAMPLE_DTYPE)).astype(np.int32)
+    data = np.frombuffer(
+        raw[INFO_SECTOR_SIZE:],
+        dtype=np.dtype(BIN_SAMPLE_DTYPE)
+    ).astype(np.int32)
 
-    usable_samples = (len(data) // total_samples_per_chirp) * total_samples_per_chirp
-    data = data[:usable_samples]
-
-    chirps_raw = data.reshape(-1, total_samples_per_chirp)
-
-    if BIN_CHIRP_HEADER_SAMPLES > 0:
-        chirps = chirps_raw[:, BIN_CHIRP_HEADER_SAMPLES:]
+    if USE_SYNC_HEADERS:
+        chirps = extract_chirps_with_sync(data, samples_per_chirp)
+        source_type = "SD BIN SYNC"
     else:
-        chirps = chirps_raw
+        chirps = extract_chirps_without_sync(data, samples_per_chirp)
+        source_type = "SD BIN NO SYNC"
 
     if len(chirps) == 0:
         raise RuntimeError("No valid chirps found in bin file")
 
-    return info, chirps, "SD BIN"
+    return info, chirps, source_type
 
 
 def load_record(filename):
@@ -239,11 +295,15 @@ def load_record(filename):
 # =========================================================
 
 def calculate_fft_dbfs(samples_u, fs, adc_bits):
-    x = samples_u.astype(np.float32)
-
     adc_mid = 2 ** (adc_bits - 1)
     adc_fs = 2 ** (adc_bits - 1)
 
+    adc_mask = (1 << adc_bits) - 1
+
+    x = samples_u.astype(np.int32)
+    x = x & adc_mask
+
+    x = x.astype(np.float32)
     x = x - adc_mid
 
     if REMOVE_DC:
@@ -276,7 +336,7 @@ def estimate_noise_floor_dbfs(mag_dbfs):
 # LOAD FILE
 # =========================================================
 
-info, chirps, source_type = load_record(FILENAME)
+info, chirps, source_type = load_record(BIN_FILE)
 
 fs = float(info["SAMPLING_FREQUENCY"])
 samples_per_chirp = int(info["NUMBER_OF_SAMPLES"])

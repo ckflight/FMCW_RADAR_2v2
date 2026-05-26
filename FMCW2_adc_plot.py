@@ -5,9 +5,13 @@ import matplotlib.pyplot as plt
 
 OPERATING_SYSTEM = 1   # 1 = Ubuntu/Linux, 2 = Windows
 
+USE_SYNC_HEADERS = False   # True = old sync logs, False = current no-sync logs
+SYNC = 0xC8C8
+
 if OPERATING_SYSTEM == 1:
     #BIN_FILE = "/home/ck/Desktop/flight_log.bin"
-    BIN_FILE = "fmcw2_bin_files/10bit_1000us_32chirp_200mhz.bin"
+    BIN_FILE = "fmcw2_bin_files/terrace_no_movement_att.bin"
+    #BIN_FILE = "fmcw2_bin_files/10bit_64_sync_salon_no_movement_for_phase_tx3db_rx6db.bin"
 
 elif OPERATING_SYSTEM == 2:
     BIN_FILE = r"C:\Users\CK\Desktop\flight_log.bin"
@@ -114,29 +118,51 @@ ADC_MASK = (1 << ADC_BITS) - 1
 ADC_FULL_SCALE = float(1 << ADC_BITS)
 ADC_CENTER = float(1 << (ADC_BITS - 1))
 
-SYNC = 0xC8C8
-
 chirps = []
 
-sync_idx = np.where(adc_u16[:-1] == SYNC)[0]
+if USE_SYNC_HEADERS:
 
-for i in sync_idx:
+    sync_idx = np.where(
+        (adc_u16[:-1] == SYNC) &
+        (adc_u16[1:] == SYNC)
+    )[0]
 
-    if adc_u16[i + 1] == SYNC:
+    for i in sync_idx:
 
         chirp = adc_u16[i + 2 : i + 2 + SAMPLES_PER_CHIRP]
 
         if len(chirp) == SAMPLES_PER_CHIRP:
             chirps.append(chirp)
 
-        i += SAMPLES_PER_CHIRP + 2
+    chirps = np.array(chirps)
 
-    else:
-        i += 1
+    num_chirps = len(chirps)
 
-chirps = np.array(chirps)
+    print(f"SYNCED CHIRPS      : {num_chirps}")
 
-num_chirps = len(chirps)
+else:
+
+    usable_samples = (len(adc_u16) // SAMPLES_PER_CHIRP) * SAMPLES_PER_CHIRP
+    unused_samples = len(adc_u16) - usable_samples
+
+    adc_u16 = adc_u16[:usable_samples]
+
+    chirps = adc_u16.reshape(-1, SAMPLES_PER_CHIRP)
+
+    num_chirps = len(chirps)
+
+    print(f"NO SYNC CHIRPS     : {num_chirps}")
+    print(f"UNUSED END SAMPLES : {unused_samples}")
+
+if num_chirps == 0:
+    raise RuntimeError("No valid chirps found")
+
+FULL_CPI_COUNT = num_chirps // CHIRPS_PER_CPI
+
+if FULL_CPI_COUNT == 0:
+    raise RuntimeError("Not enough chirps for one full CPI")
+
+print(f"FULL CPI COUNT     : {FULL_CPI_COUNT}")
 
 adc_raw = chirps & ADC_MASK
 adc_centered = adc_raw.astype(np.float32) - ADC_CENTER
@@ -164,21 +190,23 @@ print(f"Peak dBFS     : {adc_dbfs.max():.2f} dBFS")
 plt.ion()
 fig, ax = plt.subplots(figsize=(10, 6))
 
-for cpi_idx in range(CPI_COUNTER):
+for cpi_idx in range(FULL_CPI_COUNT):
     start = cpi_idx * CHIRPS_PER_CPI
     end = start + CHIRPS_PER_CPI
 
     chirps_cpi = chirps[start:end]
     avg_chirp = np.mean(chirps_cpi, axis=0)
 
-    peak = np.max(np.abs(avg_chirp)) / ADC_CENTER
+    avg_chirp_centered = avg_chirp - ADC_CENTER
+
+    peak = np.max(np.abs(avg_chirp_centered)) / ADC_CENTER
     peak_dbfs = 20.0 * np.log10(peak + eps)
 
     ax.clear()
-    ax.plot(avg_chirp)
+    ax.plot(avg_chirp_centered)
 
     ax.set_title(
-        f"Average Raw ADC CPI {cpi_idx + 1}/{CPI_COUNTER} | "
+        f"Average Raw ADC CPI {cpi_idx + 1}/{FULL_CPI_COUNT} | "
         f"Peak = {peak_dbfs:.2f} dBFS"
     )
     ax.set_xlabel("Sample Index")

@@ -1,6 +1,11 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
+# This code works with both log files with snyc header or no sync header.
+# This code is for .bin files logged with radar2v2 sdcard
+
+
+
 # This code takes whole 500 Megabyte .bin file
 # Takes recorded amount of bytes to an array to raw_data
 # After interpretting array as 16 bit 2 byte data is one sample
@@ -8,25 +13,29 @@ import matplotlib.pyplot as plt
 # 1. With a for loop creates 2D array for 128 chirps x adc samples and takes fft of this 2D array
 # 2. Sums these FFT of 128 chirp x samples array and creates 1D array and plots it. SNR improvement is remarkable!!
 # 3. Also adds this sum array to a waterfall array for plotting
-# 4. Creates range doppler map by taking FFT over columns of the array generated from FFT of 2D array for 128 chirps x adc samples
-
-# This code is for .bin files logged with radar2v2 sdcard
+# 4. Creates range doppler map by taking FFT over columns of the array generated from FFT of 2D array for 128 chirps x samples
 
 OPERATING_SYSTEM = 1   # 1 = Ubuntu/Linux, 2 = Windows
 
+USE_SYNC_HEADERS = True   # True = old sync logs, False = current no-sync logs
+SYNC = 0xC8C8
+
 if OPERATING_SYSTEM == 1:
-    BIN_FILE = "/home/ck/Desktop/flight_log.bin"
+    #BIN_FILE = "/home/ck/Desktop/flight_log.bin"
+    BIN_FILE = "fmcw2_bin_files/corridore_run_att.bin"
+    BIN_FILE = "fmcw2_bin_files/10bit_64_sync_salon_run_tx3db_rx6db.bin"
+
 elif OPERATING_SYSTEM == 2:
     BIN_FILE = r"C:\Users\CK\Desktop\flight_log.bin"
 
 INFO_SECTOR_SIZE        = 512
-MAX_RANGE_DISPLAY       = 350 # range upper plot limit in meters 
+MAX_RANGE_DISPLAY       = 40 # range upper plot limit in meters 
 
 def read_u32_be(buf, offset):
     return ((buf[offset] << 24) |
             (buf[offset + 1] << 16) |
             (buf[offset + 2] << 8) |
-            (buf[offset + 3]))
+            buf[offset + 3])
 
 def read_u16_be(buf, offset):
     return ((buf[offset] << 8) |
@@ -76,7 +85,8 @@ CHIRPS_PER_CPI          = read_u16_be(info, idx); idx += 2
 CPI_COUNTER             = read_u32_be(info, idx); idx += 4
 
 # This is the amount of byte logged
-NUM_OF_BYTES_LOGGED = int(CPI_COUNTER * CHIRPS_PER_CPI * SAMPLES_PER_CHIRP * (ADC_BITS / 8)) 
+BYTES_PER_SAMPLE = 2
+NUM_OF_BYTES_LOGGED = int(CPI_COUNTER * CHIRPS_PER_CPI * SAMPLES_PER_CHIRP * BYTES_PER_SAMPLE) 
 
 # Instead of buffering 500 Megabyte whole .bin file, take amount of byte written.
 raw_data = file_bytes[INFO_SECTOR_SIZE: INFO_SECTOR_SIZE + NUM_OF_BYTES_LOGGED]
@@ -155,44 +165,62 @@ print(f"WRITE_SPEED         : {CARD_WRITE_SPEED_MBPS:.2f} MB/s")
 
 adc_u16 = np.frombuffer(raw_data, dtype='<u2')
 
-SYNC = 0xC8C8
+if USE_SYNC_HEADERS:
 
-# Find:
-# [SYNC][SYNC]
-sync_idx = np.where(
-    (adc_u16[:-1] == SYNC) &
-    (adc_u16[1:]  == SYNC)
-)[0]
+    # Find:
+    # [SYNC][SYNC]
+    sync_idx = np.where(
+        (adc_u16[:-1] == SYNC) &
+        (adc_u16[1:]  == SYNC)
+    )[0]
 
-print("\n----- SYNC -----")
-print(f"Found sync headers : {len(sync_idx)}")
+    print("\n----- SYNC -----")
+    print(f"Found sync headers : {len(sync_idx)}")
 
-# ============================================================
-# EXTRACT CHIRPS
-# ============================================================
+    # ============================================================
+    # EXTRACT CHIRPS
+    # ============================================================
 
-chirps = []
+    chirps = []
 
-for idx in sync_idx:
+    for idx in sync_idx:
 
-    start = idx + 2
-    end = start + SAMPLES_PER_CHIRP
+        start = idx + 2
+        end = start + SAMPLES_PER_CHIRP
 
-    if end <= len(adc_u16):
+        if end <= len(adc_u16):
 
-        chirp = adc_u16[start:end]
+            chirp = adc_u16[start:end]
 
-        if len(chirp) == SAMPLES_PER_CHIRP:
-            chirps.append(chirp)
+            if len(chirp) == SAMPLES_PER_CHIRP:
+                chirps.append(chirp)
 
-chirps_u16 = np.array(chirps, dtype=np.uint16)
+    chirps_u16 = np.array(chirps, dtype=np.uint16)
 
-num_chirps = len(chirps_u16)
+    num_chirps = len(chirps_u16)
 
-print(f"SYNCED CHIRPS      : {num_chirps}")
+    print(f"SYNCED CHIRPS      : {num_chirps}")
 
-if num_chirps == 0:
-    raise ValueError("No synced chirps found")
+    if num_chirps == 0:
+        raise ValueError("No synced chirps found")
+
+else:
+
+    usable_samples = (len(adc_u16) // SAMPLES_PER_CHIRP) * SAMPLES_PER_CHIRP
+    unused_samples = len(adc_u16) - usable_samples
+
+    adc_u16 = adc_u16[:usable_samples]
+
+    chirps_u16 = adc_u16.reshape(-1, SAMPLES_PER_CHIRP).astype(np.uint16)
+
+    num_chirps = len(chirps_u16)
+
+    print("\n----- NO SYNC -----")
+    print(f"NO SYNC CHIRPS     : {num_chirps}")
+    print(f"UNUSED END SAMPLES : {unused_samples}")
+
+    if num_chirps == 0:
+        raise ValueError("No no-sync chirps found")
 
 # ============================================================
 # GENERIC ADC BIT HANDLING
@@ -214,8 +242,15 @@ chirps = adc_raw.astype(np.float32) - ADC_CENTER
 freq_hz = np.fft.rfftfreq(SAMPLES_PER_CHIRP, d=1.0 / FS)
 range_m = freq_hz / HZ_PER_M
 
+FULL_CPI_COUNT = num_chirps // CHIRPS_PER_CPI
+
+if FULL_CPI_COUNT == 0:
+    raise ValueError("Not enough chirps for one full CPI")
+
+print(f"FULL CPI COUNT     : {FULL_CPI_COUNT}")
+
 # for waterfall
-waterfall = np.zeros((CPI_COUNTER, len(range_m)), dtype=np.float32)
+waterfall = np.zeros((FULL_CPI_COUNT, len(range_m)), dtype=np.float32)
 
 plt.ion()
 fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(10, 10))
@@ -229,13 +264,13 @@ ax1.set_title("Range Profile (CPI)")
 ax1.grid(True)
 
 # 2 → Waterfall Plot
-waterfall = np.zeros((CPI_COUNTER, len(range_m)), dtype=np.float32)
+waterfall = np.zeros((FULL_CPI_COUNT, len(range_m)), dtype=np.float32)
 
 img = ax2.imshow(
     np.zeros_like(waterfall),
     aspect='auto',
     origin='lower',
-    extent=[range_m[0], range_m[-1], 0, CPI_COUNTER]
+    extent=[range_m[0], range_m[-1], 0, FULL_CPI_COUNT]
 )
 ax2.set_xlabel("Range")
 ax2.set_ylabel("CPI index")
@@ -253,7 +288,7 @@ ax3.set_xlabel("Range bin")
 ax3.set_ylabel("Doppler bin")
 ax3.set_title("Range-Doppler")
 
-for cpi_idx in range(CPI_COUNTER):
+for cpi_idx in range(FULL_CPI_COUNT):
 
     # Extract one CPI
     start = cpi_idx * CHIRPS_PER_CPI
@@ -285,7 +320,6 @@ for cpi_idx in range(CPI_COUNTER):
 
     #IMPORTANT NOTE: If i take the average of the doppler_fft as do to chirps_fft the gain again becomes 21 dB
 
-
     # Add to waterfall array
     waterfall[cpi_idx, :] = avg_range
 
@@ -294,7 +328,7 @@ for cpi_idx in range(CPI_COUNTER):
     line.set_data(range_m, avg_range)
     ax1.set_xlim(0, MAX_RANGE_DISPLAY)
     ax1.set_ylim(np.min(avg_range), np.max(avg_range) * 1.1)
-    ax1.set_title(f"Range Profile - CPI {cpi_idx+1}/{CPI_COUNTER}")
+    ax1.set_title(f"Range Profile - CPI {cpi_idx+1}/{FULL_CPI_COUNT}")
 
     #----------
 
@@ -315,18 +349,15 @@ for cpi_idx in range(CPI_COUNTER):
     img.set_data(waterfall_db)
 
     # update color scaling so contrast becomes visible
-    img.set_clim(np.max(waterfall_db) - 20, np.max(waterfall_db))
+    img.set_clim(np.max(waterfall_db) - 25, np.max(waterfall_db))
     ax2.set_xlim(0, MAX_RANGE_DISPLAY)
-    ax2.set_ylim(0, CPI_COUNTER)
-
+    ax2.set_ylim(0, FULL_CPI_COUNT)
 
     # --- update range-doppler ---
     img_rd.set_data(rd_map_limited)
     # dynamic scaling
-    img_rd.set_clim(np.max(rd_map) - 30, np.max(rd_map))
+    img_rd.set_clim(np.max(rd_map) - 35, np.max(rd_map))
     ax3.set_title(f"Range-Doppler (CPI {cpi_idx+1})")
 
     fig.canvas.draw_idle()
     plt.pause(0.01)
-
-
