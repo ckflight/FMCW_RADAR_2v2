@@ -9,14 +9,14 @@ import os
 import binascii
 from datetime import datetime
 
-RECORD_TIME         = 10            # in sec
+RECORD_TIME         = 5            # in sec
 TEST_DEVICE         = 1             # 0 STM32F4, 1 STM32H7, 2 FPGA
 OPERATING_SYSTEM    = 1             # 0 MAC, 1 UBUNTU, 2 WINDOWS (Havent implemented serial on windows.)
 
 # important note: After changing R and C values of pll circuit freq ramp bw values are perfect.
 # Notes: Current setup gives clean 50 MHz as well no noise at all on tune voltage ramp at 50 MHz (higher ramp is better any case)!!!
 SWEEP_START         = 5.20e9 
-SWEEP_BW            = 400e6
+SWEEP_BW            = 800e6
 
 # Radar 2 Card Log Settings:
 # 16 bit: 128 chirp 250us,  64chirp 500us,  32chirp 1000us 
@@ -24,11 +24,11 @@ SWEEP_BW            = 400e6
 # 12 bit: 128 chirp 250us,  64chirp 500us,  32chirp 1000us 
 # 10 bit: 128 chirp 250us,  64chirp 500us,  32chirp 1000us 
 
-DATA_LOG            = 1             # 0 for USB transfer, 1 for MicroCard Log
-SWEEP_TIME          = 1000e-6        # 100 micro or 10 ms all working, sdcard log is designed for 128 chirp 250 micro for now
+DATA_LOG            = 0             # 0 for USB transfer, 1 for MicroCard Log
+SWEEP_TIME          = 1000e-6       # 100 micro or 10 ms all working, sdcard log is designed for 128 chirp 250 m1icro for now
 CPI_CHIRP           = 32            # 1 for USB, 32 for 1ms SWEEP_TIME, 64 for 500, 128 for 250 16bit, 250 10 12 14 bit 64(max)
-ADC_RESOLUTION      = 16              # 10, 12, 14, 16
-SAMPLE_AVERAGING    = 1             # 1, 2, 4, 8, 16
+ADC_RESOLUTION      = 16            # 10, 12, 14, 16
+SAMPLE_AVERAGING    = 4             # 1, 2, 4, 8, 16
 
 TX_MODE             = 0             # 0 for continuous tx, 1 for on off with tx, 2 for testing when tx off
 SWEEP_TYPE          = 0             # 0 for Sawtooth, 1 for Triangular

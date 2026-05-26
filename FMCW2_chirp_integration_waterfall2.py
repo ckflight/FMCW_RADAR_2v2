@@ -5,7 +5,6 @@ import matplotlib.pyplot as plt
 # This code is for .bin files logged with radar2v2 sdcard
 
 
-
 # This code takes whole 500 Megabyte .bin file
 # Takes recorded amount of bytes to an array to raw_data
 # After interpretting array as 16 bit 2 byte data is one sample
@@ -17,13 +16,14 @@ import matplotlib.pyplot as plt
 
 OPERATING_SYSTEM = 1   # 1 = Ubuntu/Linux, 2 = Windows
 
-USE_SYNC_HEADERS = True   # True = old sync logs, False = current no-sync logs
+USE_SYNC_HEADERS = False   # True = old sync logs, False = current no-sync logs
 SYNC = 0xC8C8
 
 if OPERATING_SYSTEM == 1:
     #BIN_FILE = "/home/ck/Desktop/flight_log.bin"
     BIN_FILE = "fmcw2_bin_files/corridore_run_att.bin"
     BIN_FILE = "fmcw2_bin_files/10bit_64_sync_salon_run_tx3db_rx6db.bin"
+    BIN_FILE = "Radar_Records/data_record.bin"
 
 elif OPERATING_SYSTEM == 2:
     BIN_FILE = r"C:\Users\CK\Desktop\flight_log.bin"
