@@ -3,12 +3,12 @@ import matplotlib.pyplot as plt
 
 OPERATING_SYSTEM = 1   # 1 = Ubuntu/Linux, 2 = Windows
 
-USE_SYNC_HEADERS = False   # True = old sync logs, False = current no-sync logs
+USE_SYNC_HEADERS = True   # True = old sync logs, False = current no-sync logs
 SYNC = 0xC8C8
 
 if OPERATING_SYSTEM == 1:
-    #BIN_FILE = "/home/ck/Desktop/flight_log.bin"
-    BIN_FILE = "fmcw2_bin_files/terrace_no_movement_att.bin"
+    BIN_FILE = "/home/ck/Desktop/flight_log.bin"
+    #BIN_FILE = "fmcw2_bin_files/terrace_no_movement_att.bin"
     #BIN_FILE = "fmcw2_bin_files/10bit_64_sync_salon_no_movement_for_phase_tx3db_rx6db.bin"
     
 elif OPERATING_SYSTEM == 2:
@@ -46,7 +46,6 @@ if len(file_bytes) < INFO_SECTOR_SIZE:
     raise ValueError("File is smaller than 512-byte info sector")
 
 info = file_bytes[:INFO_SECTOR_SIZE]
-raw_data = file_bytes[INFO_SECTOR_SIZE:]
 
 # -----------------------------
 # Decode info sector
@@ -117,6 +116,23 @@ print(f"CPI_COUNTER         : {CPI_COUNTER}")
 # -----------------------------
 # Read ADC data with sync
 # -----------------------------
+
+# -----------------------------
+# Limit raw data to CPI_COUNTER only
+# -----------------------------
+if USE_SYNC_HEADERS:
+    words_per_chirp = SAMPLES_PER_CHIRP + 2
+else:
+    words_per_chirp = SAMPLES_PER_CHIRP
+
+num_chirps_expected = CPI_COUNTER * CHIRPS_PER_CPI
+bytes_to_read = num_chirps_expected * words_per_chirp * 2
+
+raw_data = file_bytes[
+    INFO_SECTOR_SIZE :
+    INFO_SECTOR_SIZE + bytes_to_read
+]
+
 data_u16 = np.frombuffer(raw_data, dtype="<u2")
 
 chirps = []

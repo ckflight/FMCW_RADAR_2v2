@@ -25,9 +25,9 @@ REMOVE_DC = True
 REMOVE_FIRST_N_BINS = 1
 
 if OPERATING_SYSTEM == 1:
-    #BIN_FILE = "/home/ck/Desktop/flight_log.bin"
+    BIN_FILE = "/home/ck/Desktop/flight_log.bin"
     #BIN_FILE = "fmcw2_bin_files/corridore_run_att.bin"
-    BIN_FILE = "fmcw2_bin_files/10bit_64_sync_salon_run_tx3db_rx6db.bin"
+    #BIN_FILE = "fmcw2_bin_files/10bit_64_sync_salon_run_tx3db_rx6db.bin"
     #BIN_FILE = "Radar_Records/data_record.bin"
 
 elif OPERATING_SYSTEM == 2:

@@ -8,15 +8,15 @@ OPERATING_SYSTEM = 1   # 1 = Ubuntu/Linux, 2 = Windows
 USE_SYNC_HEADERS = True   # True = old sync logs, False = current no-sync logs
 SYNC = 0xC8C8
 
-CHIRP_STEP = 10   # 1 = every chirp, 2 = every 2nd chirp, 4 = every 4th chirp
+CHIRP_STEP = 1   # 1 = every chirp, 2 = every 2nd chirp, 4 = every 4th chirp
 
 REMOVE_DC = True
 REMOVE_FIRST_N_BINS = 5
 
 if OPERATING_SYSTEM == 1:
-    #BIN_FILE = "/home/ck/Desktop/flight_log.bin"
+    BIN_FILE = "/home/ck/Desktop/flight_log.bin"
     #BIN_FILE = "fmcw2_bin_files/corridore_run_att.bin"
-    BIN_FILE = "fmcw2_bin_files/10bit_64_sync_salon_run_tx3db_rx6db.bin"
+    #BIN_FILE = "fmcw2_bin_files/10bit_64_sync_salon_run_tx3db_rx6db.bin"
     #BIN_FILE = "Radar_Records/data_record.bin"
 
 elif OPERATING_SYSTEM == 2:
@@ -169,7 +169,14 @@ print(f"WRITE_SPEED         : {CARD_WRITE_SPEED_MBPS:.2f} MB/s")
 # -----------------------------
 # Read ADC data
 # -----------------------------
-raw_data = file_bytes[INFO_SECTOR_SIZE:]
+bytes_per_chirp = (SAMPLES_PER_CHIRP + 2) * 2   # 2 sync words + ADC samples
+
+record_size = CPI_COUNTER * CHIRPS_PER_CPI * bytes_per_chirp
+
+raw_data = file_bytes[
+    INFO_SECTOR_SIZE :
+    INFO_SECTOR_SIZE + record_size
+]
 
 data_u16 = np.frombuffer(raw_data, dtype="<u2")
 

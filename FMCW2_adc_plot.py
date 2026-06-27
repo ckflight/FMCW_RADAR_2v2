@@ -5,17 +5,13 @@ import matplotlib.pyplot as plt
 
 OPERATING_SYSTEM = 1   # 1 = Ubuntu/Linux, 2 = Windows
 
-USE_SYNC_HEADERS = True   # True = old sync logs, False = current no-sync logs
+USE_SYNC_HEADERS = True
 SYNC = 0xC8C8
 
-CHIRP_STEP = 10   # 1 = every chirp, 2 = every 2nd chirp, 4 = every 4th chirp
+CHIRP_STEP = 1   # 1 = every chirp, 2 = every 2nd chirp, 4 = every 4th chirp
 
 if OPERATING_SYSTEM == 1:
-    #BIN_FILE = "/home/ck/Desktop/flight_log.bin"
-    #BIN_FILE = "fmcw2_bin_files/terrace_no_movement_att.bin"
-    BIN_FILE = "fmcw2_bin_files/10bit_64_sync_salon_run_tx3db_rx6db.bin"
-    #BIN_FILE = "Radar_Records/data_record.bin"
-
+    BIN_FILE = "/home/ck/Desktop/flight_log.bin"
 elif OPERATING_SYSTEM == 2:
     BIN_FILE = r"C:\Users\CK\Desktop\flight_log.bin"
 
@@ -85,13 +81,13 @@ if ADC_BITS not in (10, 12, 14, 16):
     raise ValueError(f"Unsupported ADC_BITS = {ADC_BITS}")
 
 FS = FS_KHZ * 1000
-num_chirps = CPI_COUNTER * CHIRPS_PER_CPI
+expected_chirps = CPI_COUNTER * CHIRPS_PER_CPI
 
 if SAMPLES_PER_CHIRP <= 0:
     raise ValueError("SAMPLES_PER_CHIRP is zero")
 
-if num_chirps <= 0:
-    raise ValueError("num_chirps is zero")
+if expected_chirps <= 0:
+    raise ValueError("expected_chirps is zero")
 
 
 # -----------------------------
@@ -103,80 +99,66 @@ print(f"ADC_BITS          : {ADC_BITS}")
 print(f"SAMPLES_PER_CHIRP : {SAMPLES_PER_CHIRP}")
 print(f"CHIRPS_PER_CPI    : {CHIRPS_PER_CPI}")
 print(f"CPI_COUNTER       : {CPI_COUNTER}")
-print(f"NUM_CHIRPS        : {num_chirps}")
+print(f"EXPECTED CHIRPS   : {expected_chirps}")
 
 
 # -----------------------------
-# Read ADC samples
-raw_data = file_bytes[INFO_SECTOR_SIZE:]
+# Read only current recording according to CPI_COUNTER
+# -----------------------------
+if USE_SYNC_HEADERS:
+    words_per_chirp = SAMPLES_PER_CHIRP + 2   # 2 sync words + ADC samples
+else:
+    words_per_chirp = SAMPLES_PER_CHIRP
+
+bytes_to_read = expected_chirps * words_per_chirp * 2
+
+raw_data = file_bytes[
+    INFO_SECTOR_SIZE :
+    INFO_SECTOR_SIZE + bytes_to_read
+]
 
 adc_u16 = np.frombuffer(raw_data, dtype="<u2")
+
+available_chirps = len(adc_u16) // words_per_chirp
+available_chirps = min(available_chirps, expected_chirps)
+
+if available_chirps <= 0:
+    raise RuntimeError("No complete chirps found")
+
+adc_u16 = adc_u16[:available_chirps * words_per_chirp]
+chirps_raw = adc_u16.reshape(available_chirps, words_per_chirp)
+
+if USE_SYNC_HEADERS:
+    bad_headers = np.where(
+        (chirps_raw[:, 0] != SYNC) |
+        (chirps_raw[:, 1] != SYNC)
+    )[0]
+
+    if len(bad_headers) > 0:
+        print(f"WARNING: {len(bad_headers)} bad sync headers")
+
+    chirps = chirps_raw[:, 2:]
+else:
+    chirps = chirps_raw
+
+num_chirps = len(chirps)
+
+print(f"LOADED CHIRPS      : {num_chirps}")
+print(f"LOADED CPI         : {num_chirps // CHIRPS_PER_CPI}")
 
 
 # -----------------------------
 # Generic ADC bit handling
-# Works for 10/12/14/16-bit unsigned ADC samples
 # -----------------------------
 ADC_MASK = (1 << ADC_BITS) - 1
-ADC_FULL_SCALE = float(1 << ADC_BITS)
 ADC_CENTER = float(1 << (ADC_BITS - 1))
-
-chirps = []
-
-if USE_SYNC_HEADERS:
-
-    sync_idx = np.where(
-        (adc_u16[:-1] == SYNC) &
-        (adc_u16[1:] == SYNC)
-    )[0]
-
-    for i in sync_idx:
-
-        chirp = adc_u16[i + 2 : i + 2 + SAMPLES_PER_CHIRP]
-
-        if len(chirp) == SAMPLES_PER_CHIRP:
-            chirps.append(chirp)
-
-    chirps = np.array(chirps)
-
-    num_chirps = len(chirps)
-
-    print(f"SYNCED CHIRPS      : {num_chirps}")
-
-else:
-
-    usable_samples = (len(adc_u16) // SAMPLES_PER_CHIRP) * SAMPLES_PER_CHIRP
-    unused_samples = len(adc_u16) - usable_samples
-
-    adc_u16 = adc_u16[:usable_samples]
-
-    chirps = adc_u16.reshape(-1, SAMPLES_PER_CHIRP)
-
-    num_chirps = len(chirps)
-
-    print(f"NO SYNC CHIRPS     : {num_chirps}")
-    print(f"UNUSED END SAMPLES : {unused_samples}")
-
-if num_chirps == 0:
-    raise RuntimeError("No valid chirps found")
-
-FULL_CPI_COUNT = num_chirps // CHIRPS_PER_CPI
-
-if FULL_CPI_COUNT == 0:
-    raise RuntimeError("Not enough chirps for one full CPI")
-
-print(f"FULL CPI COUNT     : {FULL_CPI_COUNT}")
 
 adc_raw = chirps & ADC_MASK
 adc_centered = adc_raw.astype(np.float32) - ADC_CENTER
 
-# Normalized ADC value, approximately -1.0 to +1.0
-adc_norm = adc_centered / ADC_CENTER
-
-# dBFS sample amplitude
 eps = 1e-12
+adc_norm = adc_centered / ADC_CENTER
 adc_dbfs = 20.0 * np.log10(np.abs(adc_norm) + eps)
-
 
 print("\n----- RAW ADC CHECK -----")
 print(f"Raw min       : {adc_raw.min()}")
@@ -188,35 +170,34 @@ print(f"Peak dBFS     : {adc_dbfs.max():.2f} dBFS")
 
 
 # -----------------------------
-# Plot average raw ADC per CPI
+# Plot each chirp ADC waveform
 # -----------------------------
 plt.ion()
 fig, ax = plt.subplots(figsize=(10, 6))
 
-for cpi_idx in range(0, FULL_CPI_COUNT, CHIRP_STEP):
-    start = cpi_idx * CHIRPS_PER_CPI
-    end = start + CHIRPS_PER_CPI
+for chirp_idx in range(0, num_chirps, CHIRP_STEP):
 
-    chirps_cpi = chirps[start:end]
-    avg_chirp = np.mean(chirps_cpi, axis=0)
+    chirp_centered = adc_centered[chirp_idx]
 
-    avg_chirp_centered = avg_chirp - ADC_CENTER
-
-    peak = np.max(np.abs(avg_chirp_centered)) / ADC_CENTER
+    peak = np.max(np.abs(chirp_centered)) / ADC_CENTER
     peak_dbfs = 20.0 * np.log10(peak + eps)
 
+    cpi_idx = chirp_idx // CHIRPS_PER_CPI
+    chirp_in_cpi = chirp_idx % CHIRPS_PER_CPI
+
     ax.clear()
-    ax.plot(avg_chirp_centered)
+    ax.plot(chirp_centered)
 
     ax.set_title(
-        f"Average Raw ADC CPI {cpi_idx + 1}/{FULL_CPI_COUNT} | "
+        f"Raw ADC Chirp {chirp_idx + 1}/{num_chirps} | "
+        f"CPI {cpi_idx + 1}/{CPI_COUNTER}, Chirp {chirp_in_cpi + 1}/{CHIRPS_PER_CPI} | "
         f"Peak = {peak_dbfs:.2f} dBFS"
     )
     ax.set_xlabel("Sample Index")
     ax.set_ylabel("ADC value centered")
     ax.grid(True)
 
-    plt.pause(0.05)
+    plt.pause(0.02)
 
 plt.ioff()
 plt.show()
