@@ -4,13 +4,14 @@ import matplotlib.pyplot as plt
 OPERATING_SYSTEM = 1   # 1 = Ubuntu/Linux, 2 = Windows
 
 USE_SYNC_HEADERS = True   # True = old sync logs, False = current no-sync logs
-SYNC = 0xC8C8
+SYNC = 0x1C1C
 
 if OPERATING_SYSTEM == 1:
     BIN_FILE = "/home/ck/Desktop/flight_log.bin"
     #BIN_FILE = "fmcw2_bin_files/terrace_no_movement_att.bin"
     #BIN_FILE = "fmcw2_bin_files/10bit_64_sync_salon_no_movement_for_phase_tx3db_rx6db.bin"
-    
+    BIN_FILE = "Radar_Records/data_record.bin"
+
 elif OPERATING_SYSTEM == 2:
     BIN_FILE = r"C:\Users\CK\Desktop\flight_log.bin"
 

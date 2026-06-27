@@ -17,24 +17,24 @@ import matplotlib.pyplot as plt
 OPERATING_SYSTEM = 1   # 1 = Ubuntu/Linux, 2 = Windows
 
 USE_SYNC_HEADERS = True   # True = old sync logs, False = current no-sync logs
-SYNC = 0xC8C8
+SYNC = 0x1C1C
 
 CHIRP_STEP = 1   # 1 = every chirp, 2 = every 2nd chirp, 4 = every 4th chirp
 
-REMOVE_DC = True
-REMOVE_FIRST_N_BINS = 1
+REMOVE_DC = False
+REMOVE_FIRST_N_BINS = 0
 
 if OPERATING_SYSTEM == 1:
     BIN_FILE = "/home/ck/Desktop/flight_log.bin"
     #BIN_FILE = "fmcw2_bin_files/corridore_run_att.bin"
     #BIN_FILE = "fmcw2_bin_files/10bit_64_sync_salon_run_tx3db_rx6db.bin"
-    #BIN_FILE = "Radar_Records/data_record.bin"
+    BIN_FILE = "Radar_Records/data_record.bin"
 
 elif OPERATING_SYSTEM == 2:
     BIN_FILE = r"C:\Users\CK\Desktop\flight_log.bin"
 
 INFO_SECTOR_SIZE        = 512
-MAX_RANGE_DISPLAY       = 200 # range upper plot limit in meters 
+MAX_RANGE_DISPLAY       = 100 # range upper plot limit in meters 
 
 def read_u32_be(buf, offset):
     return ((buf[offset] << 24) |

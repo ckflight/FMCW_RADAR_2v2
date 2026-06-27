@@ -4,20 +4,21 @@ import matplotlib.pyplot as plt
 OPERATING_SYSTEM = 1
 
 USE_SYNC_HEADERS = True
-SYNC = 0xC8C8
+SYNC = 0x1C1C
 
-CHIRP_STEP = 10
+CHIRP_STEP = 1
 FRAME_DELAY = 0.0001
 
-REMOVE_DC = False
+REMOVE_DC = True
 USE_WINDOW = True
-IGNORE_FIRST_BINS = 0
+IGNORE_FIRST_BINS = 10
 NOISE_PERCENTILE = 20
 
 INFO_SECTOR_SIZE = 512
 
 if OPERATING_SYSTEM == 1:
-    BIN_FILE = "/home/ck/Desktop/flight_log.bin"
+    #BIN_FILE = "/home/ck/Desktop/flight_log.bin"
+    BIN_FILE = "Radar_Records/data_record.bin"
 else:
     BIN_FILE = r"C:\Users\CK\Desktop\flight_log.bin"
 

@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 OPERATING_SYSTEM = 1   # 1 = Ubuntu/Linux, 2 = Windows
 
 USE_SYNC_HEADERS = True   # True = old sync logs, False = current no-sync logs
-SYNC = 0xC8C8
+SYNC = 0x1C1C
 
 CHIRP_STEP = 1   # 1 = every chirp, 2 = every 2nd chirp, 4 = every 4th chirp
 
@@ -14,16 +14,16 @@ REMOVE_DC = True
 REMOVE_FIRST_N_BINS = 5
 
 if OPERATING_SYSTEM == 1:
-    BIN_FILE = "/home/ck/Desktop/flight_log.bin"
+    #BIN_FILE = "/home/ck/Desktop/flight_log.bin"
     #BIN_FILE = "fmcw2_bin_files/corridore_run_att.bin"
     #BIN_FILE = "fmcw2_bin_files/10bit_64_sync_salon_run_tx3db_rx6db.bin"
-    #BIN_FILE = "Radar_Records/data_record.bin"
+    BIN_FILE = "Radar_Records/data_record.bin"
 
 elif OPERATING_SYSTEM == 2:
     BIN_FILE = r"C:\Users\CK\Desktop\flight_log.bin"
 
 INFO_SECTOR_SIZE  = 512
-MAX_RANGE_DISPLAY = 30 # if > abs max distance then abs max is displayed.
+MAX_RANGE_DISPLAY = 50000 # if > abs max distance then abs max is displayed.
 
 NOISE_RANGE_MIN = 0
 NOISE_RANGE_MAX = MAX_RANGE_DISPLAY
@@ -398,11 +398,11 @@ for cpi_idx in range(0, FULL_CPI_COUNT, CHIRP_STEP):
     # Update waterfall
     waterfall_limited = waterfall[:, range_mask]
     img.set_data(waterfall_limited)
-    img.set_clim(np.max(waterfall_limited) - 40, np.max(waterfall_limited))
+    img.set_clim(np.max(waterfall_limited) - 30, np.max(waterfall_limited))
 
     # Update range-Doppler
     img_rd.set_data(rd_map_limited)
-    img_rd.set_clim(np.max(rd_map_limited) - 40, np.max(rd_map_limited))
+    img_rd.set_clim(np.max(rd_map_limited) - 30, np.max(rd_map_limited))
 
     ax3.set_title(f"Range-Doppler Map - CPI {cpi_idx + 1}/{FULL_CPI_COUNT}")
 

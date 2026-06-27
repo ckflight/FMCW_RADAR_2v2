@@ -32,7 +32,7 @@ FREQ_DIV            = 1
 FIR_SMOOTHING_N     = 100 # higher is smoother
 UPDATE_EVERY_N_CHIRPS = 1  # increase to 2, 5, 10 for faster UI playback
 
-BIN_FILE = "Radar_Records/data_record.bin"
+BIN_FILE = "/home/ck/Desktop/flight_log.bin"
 INFO_SECTOR_SIZE = 512
 BIN_SAMPLE_DTYPE = "<u2"   # little endian bin file format
 
