@@ -4,9 +4,14 @@ import matplotlib.pyplot as plt
 OPERATING_SYSTEM = 1
 
 USE_SYNC_HEADERS = True
-SYNC = 0x1C1C
+HEADER_SIZE = 4
 
-CHIRP_STEP = 1
+SYNC0 = 0x1C1C
+SYNC1 = 0xC1C1
+SYNC2 = 0x9999
+SYNC3 = 0x00FF
+
+CHIRP_STEP = 10
 FRAME_DELAY = 0.0001
 
 REMOVE_DC = True
@@ -17,8 +22,9 @@ NOISE_PERCENTILE = 20
 INFO_SECTOR_SIZE = 512
 
 if OPERATING_SYSTEM == 1:
-    #BIN_FILE = "/home/ck/Desktop/flight_log.bin"
     BIN_FILE = "Radar_Records/data_record.bin"
+    #BIN_FILE = "/home/ck/Desktop/flight_log.bin"
+
 else:
     BIN_FILE = r"C:\Users\CK\Desktop\flight_log.bin"
 
@@ -46,6 +52,7 @@ if len(file_bytes) < INFO_SECTOR_SIZE:
     raise ValueError("File is smaller than info sector")
 
 info = file_bytes[:INFO_SECTOR_SIZE]
+
 
 # -----------------------------
 # Decode info sector
@@ -78,6 +85,7 @@ CARD_WRITE_END_TIMER_US = read_u32_be(info, idx); idx += 4
 CHIRPS_PER_CPI = read_u16_be(info, idx); idx += 2
 CPI_COUNTER    = read_u32_be(info, idx); idx += 4
 
+
 # -----------------------------
 # Basic values
 # -----------------------------
@@ -87,22 +95,28 @@ num_chirps_expected = CPI_COUNTER * CHIRPS_PER_CPI
 if ADC_BITS not in (10, 12, 14, 16):
     raise ValueError(f"Unsupported ADC_BITS = {ADC_BITS}")
 
+if SAMPLES_PER_CHIRP <= 0:
+    raise RuntimeError("SAMPLES_PER_CHIRP is zero")
+
 if num_chirps_expected <= 0:
     raise RuntimeError("CPI_COUNTER or CHIRPS_PER_CPI is zero")
+
 
 print("\n----- INFO -----")
 print(f"FS                : {FS / 1e6:.3f} MHz")
 print(f"ADC_BITS          : {ADC_BITS}")
 print(f"SAMPLES_PER_CHIRP : {SAMPLES_PER_CHIRP}")
+print(f"HEADER_SIZE       : {HEADER_SIZE if USE_SYNC_HEADERS else 0} words")
 print(f"CHIRPS_PER_CPI    : {CHIRPS_PER_CPI}")
 print(f"CPI_COUNTER       : {CPI_COUNTER}")
 print(f"EXPECTED CHIRPS   : {num_chirps_expected}")
+
 
 # -----------------------------
 # Read only CPI_COUNTER amount of ADC data
 # -----------------------------
 if USE_SYNC_HEADERS:
-    words_per_chirp = SAMPLES_PER_CHIRP + 2
+    words_per_chirp = SAMPLES_PER_CHIRP + HEADER_SIZE
 else:
     words_per_chirp = SAMPLES_PER_CHIRP
 
@@ -116,32 +130,53 @@ raw_data = file_bytes[
 
 data_u16 = np.frombuffer(raw_data, dtype="<u2")
 
+
+# -----------------------------
+# Fixed-stride chirp extraction
+# -----------------------------
 available_chirps = len(data_u16) // words_per_chirp
 available_chirps = min(available_chirps, num_chirps_expected)
 
 if available_chirps <= 0:
     raise RuntimeError("No complete chirps available")
 
+unused_words = len(data_u16) - available_chirps * words_per_chirp
+
 data_u16 = data_u16[:available_chirps * words_per_chirp]
 chirps_raw = data_u16.reshape(available_chirps, words_per_chirp)
 
 if USE_SYNC_HEADERS:
     bad_headers = np.where(
-        (chirps_raw[:, 0] != SYNC) |
-        (chirps_raw[:, 1] != SYNC)
+        (chirps_raw[:, 0] != SYNC0) |
+        (chirps_raw[:, 1] != SYNC1) |
+        (chirps_raw[:, 2] != SYNC2) |
+        (chirps_raw[:, 3] != SYNC3)
     )[0]
 
-    if len(bad_headers) > 0:
-        print(f"WARNING: {len(bad_headers)} chirp headers are not 0xC8C8")
+    chirps = chirps_raw[:, HEADER_SIZE:]
 
-    chirps = chirps_raw[:, 2:]
+    print("\n----- SYNC -----")
+    print(f"LOADED CHIRPS      : {len(chirps)}")
+    print(f"BAD HEADERS        : {len(bad_headers)}")
+    print(f"UNUSED END WORDS   : {unused_words}")
+    print(f"LOADED CPI         : {len(chirps) // CHIRPS_PER_CPI}")
+
+    if len(bad_headers) > 0:
+        print("First bad header indices:", bad_headers[:20])
+
 else:
     chirps = chirps_raw
 
+    print("\n----- NO SYNC -----")
+    print(f"LOADED CHIRPS      : {len(chirps)}")
+    print(f"UNUSED END WORDS   : {unused_words}")
+    print(f"LOADED CPI         : {len(chirps) // CHIRPS_PER_CPI}")
+
 num_chirps = len(chirps)
 
-print(f"LOADED CHIRPS      : {num_chirps}")
-print(f"LOADED CPI         : {num_chirps // CHIRPS_PER_CPI}")
+if num_chirps == 0:
+    raise RuntimeError("No valid chirps found")
+
 
 # -----------------------------
 # ADC handling
@@ -156,6 +191,7 @@ print("\n----- RAW ADC CHECK -----")
 print(f"Raw min            : {int(chirps.min())}")
 print(f"Raw max            : {int(chirps.max())}")
 print(f"Raw mean           : {float(chirps.mean()):.2f}")
+
 
 # -----------------------------
 # FFT function
@@ -204,6 +240,7 @@ else:
 noise_hist = []
 chirp_hist = []
 
+
 # -----------------------------
 # Plot setup
 # -----------------------------
@@ -237,6 +274,7 @@ text_noise = ax_fft.text(
     "",
     transform=ax_fft.transAxes
 )
+
 
 # -----------------------------
 # Plot only loaded/header-limited chirps

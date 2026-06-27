@@ -5,25 +5,28 @@ import matplotlib.pyplot as plt
 
 OPERATING_SYSTEM = 1   # 1 = Ubuntu/Linux, 2 = Windows
 
-USE_SYNC_HEADERS = True   # True = old sync logs, False = current no-sync logs
-SYNC = 0x1C1C
+USE_SYNC_HEADERS = True
+HEADER_SIZE = 4
 
-CHIRP_STEP = 1   # 1 = every chirp, 2 = every 2nd chirp, 4 = every 4th chirp
+SYNC0 = 0x1C1C
+SYNC1 = 0xC1C1
+SYNC2 = 0x9999
+SYNC3 = 0x00FF
+
+CHIRP_STEP = 1
 
 REMOVE_DC = True
-REMOVE_FIRST_N_BINS = 5
+REMOVE_FIRST_N_BINS = 0
 
 if OPERATING_SYSTEM == 1:
-    #BIN_FILE = "/home/ck/Desktop/flight_log.bin"
-    #BIN_FILE = "fmcw2_bin_files/corridore_run_att.bin"
-    #BIN_FILE = "fmcw2_bin_files/10bit_64_sync_salon_run_tx3db_rx6db.bin"
     BIN_FILE = "Radar_Records/data_record.bin"
+    #BIN_FILE = "/home/ck/Desktop/flight_log.bin"
 
 elif OPERATING_SYSTEM == 2:
     BIN_FILE = r"C:\Users\CK\Desktop\flight_log.bin"
 
 INFO_SECTOR_SIZE  = 512
-MAX_RANGE_DISPLAY = 50000 # if > abs max distance then abs max is displayed.
+MAX_RANGE_DISPLAY = 50000
 
 NOISE_RANGE_MIN = 0
 NOISE_RANGE_MAX = MAX_RANGE_DISPLAY
@@ -40,9 +43,6 @@ def read_u16_be(buf, offset):
     return (buf[offset] << 8) | buf[offset + 1]
 
 
-# -----------------------------
-# Read file
-# -----------------------------
 with open(BIN_FILE, "rb") as f:
     file_bytes = f.read()
 
@@ -51,10 +51,6 @@ if len(file_bytes) < INFO_SECTOR_SIZE:
 
 info = file_bytes[:INFO_SECTOR_SIZE]
 
-
-# -----------------------------
-# Decode info sector
-# -----------------------------
 idx = 0
 
 RECORD_COUNTER     = read_u32_be(info, idx); idx += 4
@@ -84,16 +80,18 @@ CHIRPS_PER_CPI = read_u16_be(info, idx); idx += 2
 CPI_COUNTER    = read_u32_be(info, idx); idx += 4
 
 
-# -----------------------------
-# Validate ADC bits
-# -----------------------------
 if ADC_BITS not in (10, 12, 14, 16):
     raise ValueError(f"Unsupported ADC_BITS = {ADC_BITS}")
 
+if SAMPLES_PER_CHIRP <= 0:
+    raise ValueError("SAMPLES_PER_CHIRP is zero")
 
-# -----------------------------
-# Reconstruct values
-# -----------------------------
+num_chirps_expected = CPI_COUNTER * CHIRPS_PER_CPI
+
+if num_chirps_expected <= 0:
+    raise ValueError("num_chirps_expected is zero")
+
+
 FS = FS_KHZ * 1000
 SWEEP_TIME = SWEEP_TIME_US * 1e-6
 SWEEP_GAP = SWEEP_GAP_US * 1e-6
@@ -113,17 +111,14 @@ if (CPI_END_TIMER_US + CARD_WRITE_END_TIMER_US) > 0:
     CPI_RATE_HZ = 1e6 / (CPI_END_TIMER_US + CARD_WRITE_END_TIMER_US)
 
 
-# -----------------------------
-# ADC data size
-# STM32 DMA stores 10/12/14/16-bit ADC data as uint16_t
-# -----------------------------
 BYTES_PER_SAMPLE = 2
 
-num_chirps_expected = CPI_COUNTER * CHIRPS_PER_CPI
-expected_samples = num_chirps_expected * SAMPLES_PER_CHIRP
-expected_bytes = expected_samples * BYTES_PER_SAMPLE
+if USE_SYNC_HEADERS:
+    words_per_chirp = SAMPLES_PER_CHIRP + HEADER_SIZE
+else:
+    words_per_chirp = SAMPLES_PER_CHIRP
 
-BYTES_PER_CHIRP = SAMPLES_PER_CHIRP * BYTES_PER_SAMPLE
+BYTES_PER_CHIRP = words_per_chirp * BYTES_PER_SAMPLE
 BYTES_PER_CPI = CHIRPS_PER_CPI * BYTES_PER_CHIRP
 
 CONFIGURED_DATA_RATE_MBPS = (BYTES_PER_CHIRP * CONFIGURED_PRF_HZ) / 1e6
@@ -133,12 +128,10 @@ if CARD_WRITE_END_TIMER_US > 0:
     CARD_WRITE_SPEED_MBPS = BYTES_PER_CPI / (CARD_WRITE_END_TIMER_US / 1e6) / 1e6
 
 
-# -----------------------------
-# Print info
-# -----------------------------
 print("\n----- SYSTEM -----")
 print(f"FS                  : {FS/1e6:.2f} MHz")
 print(f"SAMPLES_PER_CHIRP   : {SAMPLES_PER_CHIRP}")
+print(f"HEADER_SIZE         : {HEADER_SIZE if USE_SYNC_HEADERS else 0} words")
 print(f"HZ_PER_M            : {HZ_PER_M}")
 print(f"ADC_BITS            : {ADC_BITS}")
 print(f"TX_POWER            : {TX_POWER_DBM} dBm")
@@ -166,12 +159,11 @@ print(f"DATA_RATE           : {CONFIGURED_DATA_RATE_MBPS:.2f} MB/s")
 print("\n----- SD WRITE -----")
 print(f"WRITE_SPEED         : {CARD_WRITE_SPEED_MBPS:.2f} MB/s")
 
+
 # -----------------------------
 # Read ADC data
 # -----------------------------
-bytes_per_chirp = (SAMPLES_PER_CHIRP + 2) * 2   # 2 sync words + ADC samples
-
-record_size = CPI_COUNTER * CHIRPS_PER_CPI * bytes_per_chirp
+record_size = num_chirps_expected * BYTES_PER_CHIRP
 
 raw_data = file_bytes[
     INFO_SECTOR_SIZE :
@@ -180,41 +172,43 @@ raw_data = file_bytes[
 
 data_u16 = np.frombuffer(raw_data, dtype="<u2")
 
-chirps = []
+available_chirps = len(data_u16) // words_per_chirp
+available_chirps = min(available_chirps, num_chirps_expected)
+
+if available_chirps <= 0:
+    raise RuntimeError("No complete chirps available")
+
+unused_words = len(data_u16) - available_chirps * words_per_chirp
+
+data_u16 = data_u16[:available_chirps * words_per_chirp]
+chirps_raw = data_u16.reshape(available_chirps, words_per_chirp)
 
 if USE_SYNC_HEADERS:
-
-    sync_idx = np.where(
-        (data_u16[:-1] == SYNC) &
-        (data_u16[1:] == SYNC)
+    bad_headers = np.where(
+        (chirps_raw[:, 0] != SYNC0) |
+        (chirps_raw[:, 1] != SYNC1) |
+        (chirps_raw[:, 2] != SYNC2) |
+        (chirps_raw[:, 3] != SYNC3)
     )[0]
 
-    for i in sync_idx:
+    chirps = chirps_raw[:, HEADER_SIZE:]
 
-        chirp = data_u16[i + 2 : i + 2 + SAMPLES_PER_CHIRP]
+    print("\n----- SYNC -----")
+    print(f"LOADED CHIRPS      : {len(chirps)}")
+    print(f"BAD HEADERS        : {len(bad_headers)}")
+    print(f"UNUSED END WORDS   : {unused_words}")
 
-        if len(chirp) == SAMPLES_PER_CHIRP:
-            chirps.append(chirp)
-
-    chirps = np.array(chirps)
-
-    num_chirps = len(chirps)
-
-    print(f"SYNCED CHIRPS      : {num_chirps}")
+    if len(bad_headers) > 0:
+        print("First bad header indices:", bad_headers[:20])
 
 else:
+    chirps = chirps_raw
 
-    usable_samples = (len(data_u16) // SAMPLES_PER_CHIRP) * SAMPLES_PER_CHIRP
-    unused_samples = len(data_u16) - usable_samples
+    print("\n----- NO SYNC -----")
+    print(f"LOADED CHIRPS      : {len(chirps)}")
+    print(f"UNUSED END WORDS   : {unused_words}")
 
-    data_u16 = data_u16[:usable_samples]
-
-    chirps = data_u16.reshape(-1, SAMPLES_PER_CHIRP)
-
-    num_chirps = len(chirps)
-
-    print(f"NO SYNC CHIRPS     : {num_chirps}")
-    print(f"UNUSED END SAMPLES : {unused_samples}")
+num_chirps = len(chirps)
 
 if num_chirps == 0:
     raise RuntimeError("No valid chirps found")
@@ -227,9 +221,8 @@ if FULL_CPI_COUNT == 0:
 
 print(f"FULL CPI COUNT     : {FULL_CPI_COUNT}")
 
-# Keep only valid ADC bits
-ADC_MASK = (1 << ADC_BITS) - 1
 
+ADC_MASK = (1 << ADC_BITS) - 1
 chirps = chirps & ADC_MASK
 
 print("\n----- RAW ADC CHECK -----")
@@ -237,17 +230,12 @@ print(f"Raw min             : {int(chirps.min())}")
 print(f"Raw max             : {int(chirps.max())}")
 print(f"Raw mean            : {float(chirps.mean()):.2f}")
 
-# Unsigned ADC -> centered signed-like float
 ADC_CENTER = 1 << (ADC_BITS - 1)
-
 FS_PEAK = ADC_CENTER
 
 chirps = chirps.astype(np.float32) - ADC_CENTER
 
 
-# -----------------------------
-# Range axis
-# -----------------------------
 freq_hz = np.fft.rfftfreq(SAMPLES_PER_CHIRP, d=1.0 / FS)
 
 if HZ_PER_M > 0:
@@ -265,15 +253,10 @@ print(f"MAX_UNAMBIG_RANGE   : {MAX_UNAMBIG_RANGE:.2f} m")
 print(f"MAX_RANGE_DISPLAY   : {MAX_RANGE_DISPLAY:.2f} m")
 
 
-# -----------------------------
-# FFT normalization
-# -----------------------------
 w = np.hanning(SAMPLES_PER_CHIRP)
 cg = np.sum(w) / SAMPLES_PER_CHIRP
 
-# -----------------------------
-# Plot setup
-# -----------------------------
+
 waterfall = np.full((DISPLAY_CPI_COUNT, len(range_m)), -160.0, dtype=np.float32)
 
 plt.ion()
@@ -317,9 +300,6 @@ ax3.set_title("Range-Doppler Map")
 ax3.set_xlim(0, MAX_RANGE_DISPLAY)
 
 
-# -----------------------------
-# CPI processing
-# -----------------------------
 for cpi_idx in range(0, FULL_CPI_COUNT, CHIRP_STEP):
 
     start = cpi_idx * CHIRPS_PER_CPI
@@ -327,30 +307,20 @@ for cpi_idx in range(0, FULL_CPI_COUNT, CHIRP_STEP):
 
     chirps_cpi = chirps[start:end]
 
-    # Remove DC per chirp
     if REMOVE_DC:
         chirps_cpi = chirps_cpi - np.mean(chirps_cpi, axis=1, keepdims=True)
 
-    # Window
     chirps_cpi_w = chirps_cpi * w
-
-    # Convert ADC counts to full-scale units
     chirps_cpi_fs = chirps_cpi_w / FS_PEAK
 
-    # Range FFT
     chirps_fft = np.fft.rfft(chirps_cpi_fs, axis=1)
-
-    # Coherent gain / FFT amplitude normalization
     chirps_fft = chirps_fft / (SAMPLES_PER_CHIRP * cg / 2)
 
-    # Suppress DC / close leakage bins
     chirps_fft[:, :REMOVE_FIRST_N_BINS] = 0.0
 
-    # Non-coherent integration over chirps
     avg_power = np.mean(np.abs(chirps_fft) ** 2, axis=0)
     avg_range_dbfs = 10 * np.log10(avg_power + 1e-30)
 
-    # Noise floor estimate
     noise_mask = (
         (range_m > NOISE_RANGE_MIN) &
         (range_m < min(NOISE_RANGE_MAX, MAX_UNAMBIG_RANGE))
@@ -368,21 +338,18 @@ for cpi_idx in range(0, FULL_CPI_COUNT, CHIRP_STEP):
 
     display_idx = cpi_idx // CHIRP_STEP
     waterfall[display_idx, :] = avg_range_dbfs
-    
-    # Range-Doppler    
-    doppler_fft = np.fft.fft(chirps_fft, axis=0)
 
+    doppler_fft = np.fft.fft(chirps_fft, axis=0)
     doppler_fft = np.fft.fftshift(doppler_fft, axes=0)
+
     rd_map_dbfs = 20 * np.log10(np.abs(doppler_fft) + 1e-30)
     rd_map_limited = rd_map_dbfs[:, range_mask]
 
-    # Smooth display only
     kernel_size = 5
     kernel = np.ones(kernel_size) / kernel_size
     avg_range_dbfs_plot = np.convolve(avg_range_dbfs, kernel, mode="same")
     avg_range_limited = avg_range_dbfs_plot[range_mask]
 
-    # Update range profile
     line.set_data(range_m_limited, avg_range_limited)
 
     ymax = np.max(avg_range_limited)
@@ -395,12 +362,10 @@ for cpi_idx in range(0, FULL_CPI_COUNT, CHIRP_STEP):
         f"| Noise {noise_floor_dbfs:.2f} dBFS/bin"
     )
 
-    # Update waterfall
     waterfall_limited = waterfall[:, range_mask]
     img.set_data(waterfall_limited)
     img.set_clim(np.max(waterfall_limited) - 30, np.max(waterfall_limited))
 
-    # Update range-Doppler
     img_rd.set_data(rd_map_limited)
     img_rd.set_clim(np.max(rd_map_limited) - 30, np.max(rd_map_limited))
 

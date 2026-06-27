@@ -25,8 +25,8 @@ SWEEP_BW            = 900e6
 # 10 bit: 128 chirp 250us,  64chirp 500us,  32chirp 1000us 
 
 DATA_LOG            = 0             # 0 for USB transfer, 1 for MicroCard Log
-SWEEP_TIME          = 250e-6        # 100 micro or 10 ms all working, sdcard log is designed for 128 chirp 250 m1icro for now
-CPI_CHIRP           = 32             # 1 for USB, 32 for 1ms SWEEP_TIME, 64 for 500, 128 for 250 16bit, 250 10 12 14 bit 64(max)
+SWEEP_TIME          = 150e-6       # 100 micro or 10 ms all working, sdcard log is designed for 128 chirp 250 m1icro for now
+CPI_CHIRP           = 32            # 1 for USB, 32 for 1ms SWEEP_TIME, 64 for 500, 128 for 250 16bit, 250 10 12 14 bit 64(max)
 ADC_RESOLUTION      = 10            # 10, 12, 14, 16
 SAMPLE_AVERAGING    = 1             # 1, 2, 4, 8, 16
 
@@ -53,15 +53,39 @@ if TEST_DEVICE == 0:
     NUMBER_OF_SAMPLES = int(SAMPLING_FREQUENCY * SWEEP_TIME) * 1  # NUMBER_OF_SAMPLES(16bit) = SAMPLING_FREQUENCY * SWEEP_TIME(int)
 
 if TEST_DEVICE == 1:
-    # Oversampling 2 works with highest rates for each bit options.
+    # If these numbers result is not multiple of 512 so sector number is not integer but 663.5 etc it gives sync issue.
+
     if ADC_RESOLUTION == 16:
-        freq = 3700000
+        if CPI_CHIRP == 32:
+            freq = 3700000
+        elif CPI_CHIRP == 64:
+            freq = 3696000
+        elif CPI_CHIRP == 128:
+            freq = 3696000
+    
     elif ADC_RESOLUTION == 14:
-        freq = 4100000
+        if CPI_CHIRP == 32:
+            freq = 4100000
+        elif CPI_CHIRP == 64:
+            freq = 4096000
+        elif CPI_CHIRP == 128:
+            freq = 4096000
+    
     elif ADC_RESOLUTION == 12:
-        freq = 4600000
+        if CPI_CHIRP == 32:
+            freq = 4569000
+        elif CPI_CHIRP == 64:
+            freq = 4600000
+        elif CPI_CHIRP == 128:
+            freq = 4600000
+
     elif ADC_RESOLUTION == 10:
-        freq = 5300000
+        if CPI_CHIRP == 32:
+            freq = 5300000
+        elif CPI_CHIRP == 64:
+            freq = 5296000
+        elif CPI_CHIRP == 128:
+            freq = 5296000
 
     SAMPLING_FREQUENCY = int(freq / SAMPLE_AVERAGING)
     NUMBER_OF_SAMPLES = int(SAMPLING_FREQUENCY * SWEEP_TIME) * 1  # NUMBER_OF_SAMPLES(16bit) = SAMPLING_FREQUENCY * SWEEP_TIME(int)

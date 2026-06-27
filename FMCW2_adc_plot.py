@@ -3,14 +3,19 @@ import matplotlib.pyplot as plt
 
 OPERATING_SYSTEM = 1
 
-USE_SYNC_HEADERS = False
-SYNC = 0x1C1C
-CHIRP_STEP = 10
+USE_SYNC_HEADERS = True
+HEADER_SIZE = 4
+
+SYNC0 = 0x1C1C
+SYNC1 = 0xC1C1
+SYNC2 = 0x9999
+SYNC3 = 0x00FF
+
+CHIRP_STEP = 1
 
 if OPERATING_SYSTEM == 1:
-    BIN_FILE = "/home/ck/Desktop/flight_log.bin"
     BIN_FILE = "Radar_Records/data_record.bin"
-
+    #BIN_FILE = "/home/ck/Desktop/flight_log.bin"
 else:
     BIN_FILE = r"C:\Users\CK\Desktop\flight_log.bin"
 
@@ -104,7 +109,11 @@ print(f"EXPECTED CHIRPS   : {expected_chirps}")
 # -----------------------------
 # Read only current record
 # -----------------------------
-words_per_chirp = SAMPLES_PER_CHIRP + 2
+if USE_SYNC_HEADERS:
+    words_per_chirp = SAMPLES_PER_CHIRP + HEADER_SIZE
+else:
+    words_per_chirp = SAMPLES_PER_CHIRP
+
 bytes_to_read = expected_chirps * words_per_chirp * 2
 
 raw_data = file_bytes[
@@ -116,46 +125,50 @@ adc_u16 = np.frombuffer(raw_data, dtype="<u2")
 
 
 # -----------------------------
-# Extract synced chirps
+# Extract chirps with fixed stride
 # -----------------------------
-sync_idx_all = np.where(
-    (adc_u16[:-1] == SYNC) &
-    (adc_u16[1:] == SYNC)
-)[0]
+available_chirps = len(adc_u16) // words_per_chirp
+available_chirps = min(available_chirps, expected_chirps)
 
-chirps = []
-valid_sync_idx = []
+if available_chirps <= 0:
+    raise RuntimeError("No complete chirps available")
 
-for i in sync_idx_all:
-    end = i + 2 + SAMPLES_PER_CHIRP
+unused_words = len(adc_u16) - available_chirps * words_per_chirp
 
-    if end > len(adc_u16):
-        continue
+adc_u16 = adc_u16[:available_chirps * words_per_chirp]
+chirps_raw = adc_u16.reshape(available_chirps, words_per_chirp)
 
-    # Reject false sync inside ADC data:
-    # next chirp should start exactly words_per_chirp later.
-    next_i = i + words_per_chirp
-    if next_i + 1 < len(adc_u16):
-        if not (adc_u16[next_i] == SYNC and adc_u16[next_i + 1] == SYNC):
-            continue
+if USE_SYNC_HEADERS:
+    bad_headers = np.where(
+        (chirps_raw[:, 0] != SYNC0) |
+        (chirps_raw[:, 1] != SYNC1) |
+        (chirps_raw[:, 2] != SYNC2) |
+        (chirps_raw[:, 3] != SYNC3)
+    )[0]
 
-    chirps.append(adc_u16[i + 2 : end])
-    valid_sync_idx.append(i)
+    chirps = chirps_raw[:, HEADER_SIZE:]
 
-    if len(chirps) >= expected_chirps:
-        break
+    print("\n----- SYNC -----")
+    print(f"LOADED CHIRPS      : {len(chirps)}")
+    print(f"BAD HEADERS        : {len(bad_headers)}")
+    print(f"UNUSED END WORDS   : {unused_words}")
+    print(f"VALID CPI          : {len(chirps) // CHIRPS_PER_CPI}")
 
-chirps = np.array(chirps)
+    if len(bad_headers) > 0:
+        print("First bad header indices:", bad_headers[:20])
+
+else:
+    chirps = chirps_raw
+
+    print("\n----- NO SYNC -----")
+    print(f"LOADED CHIRPS      : {len(chirps)}")
+    print(f"UNUSED END WORDS   : {unused_words}")
+    print(f"VALID CPI          : {len(chirps) // CHIRPS_PER_CPI}")
 
 num_chirps = len(chirps)
 
 if num_chirps == 0:
-    raise RuntimeError("No valid synced chirps found")
-
-print("\n----- SYNC -----")
-print(f"FOUND SYNC HEADERS : {len(sync_idx_all)}")
-print(f"VALID CHIRPS       : {num_chirps}")
-print(f"VALID CPI          : {num_chirps // CHIRPS_PER_CPI}")
+    raise RuntimeError("No valid chirps found")
 
 
 # -----------------------------
@@ -179,7 +192,7 @@ print(f"Peak dBFS     : {adc_dbfs.max():.2f} dBFS")
 
 
 # -----------------------------
-# Plot each synced chirp
+# Plot each chirp
 # -----------------------------
 plt.ion()
 fig, ax = plt.subplots(figsize=(10, 6))
@@ -198,7 +211,7 @@ for chirp_idx in range(0, num_chirps, CHIRP_STEP):
     ax.plot(y)
 
     ax.set_title(
-        f"Synced ADC Chirp {chirp_idx + 1}/{num_chirps} | "
+        f"ADC Chirp {chirp_idx + 1}/{num_chirps} | "
         f"CPI {cpi_idx + 1}/{CPI_COUNTER} | "
         f"Chirp {chirp_in_cpi + 1}/{CHIRPS_PER_CPI} | "
         f"Peak {peak_dbfs:.2f} dBFS"
@@ -208,7 +221,7 @@ for chirp_idx in range(0, num_chirps, CHIRP_STEP):
     ax.set_ylabel("ADC centered")
     ax.grid(True)
 
-    plt.pause(0.02)
+    plt.pause(0.0001)
 
 plt.ioff()
 plt.show()
