@@ -9,7 +9,7 @@ import os
 import binascii
 from datetime import datetime
 
-RECORD_TIME         = 20            # in sec
+RECORD_TIME         = 10            # in sec
 TEST_DEVICE         = 1             # 0 STM32F4, 1 STM32H7, 2 FPGA
 OPERATING_SYSTEM    = 1             # 0 MAC, 1 UBUNTU, 2 WINDOWS (Havent implemented serial on windows.)
 
@@ -24,9 +24,9 @@ SWEEP_BW            = 700e6
 # 12 bit: 128 chirp 250us,  64chirp 500us,  32chirp 1000us 
 # 10 bit: 128 chirp 250us,  64chirp 500us,  32chirp 1000us 
 
-DATA_LOG            = 0             # 0 for USB transfer, 1 for MicroCard Log
-SWEEP_TIME          = 100e-6       # 100 micro or 10 ms all working, sdcard log is designed for 128 chirp 250 m1icro for now
-CPI_CHIRP           = 128            # 1 for USB, 32 for 1ms SWEEP_TIME, 64 for 500, 128 for 250 16bit, 250 10 12 14 bit 64(max)
+DATA_LOG            = 1             # 0 for USB transfer, 1 for MicroCard Log
+SWEEP_TIME          = 250e-6        # 100 micro or 10 ms all working, sdcard log is designed for 128 chirp 250 m1icro for now
+CPI_CHIRP           = 128           # 1 for USB, 32 for 1ms SWEEP_TIME, 64 for 500, 128 for 250 16bit, 250 10 12 14 bit 64(max)
 ADC_RESOLUTION      = 10            # 10, 12, 14, 16
 SAMPLE_AVERAGING    = 1             # 1, 2, 4, 8, 16
 

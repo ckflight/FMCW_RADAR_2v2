@@ -23,7 +23,7 @@ INFO_SECTOR_SIZE = 512
 
 if OPERATING_SYSTEM == 1:
     BIN_FILE = "Radar_Records/data_record.bin"
-    #BIN_FILE = "/home/ck/Desktop/flight_log.bin"
+    BIN_FILE = "/home/ck/Desktop/flight_log.bin"
 
 else:
     BIN_FILE = r"C:\Users\CK\Desktop\flight_log.bin"
