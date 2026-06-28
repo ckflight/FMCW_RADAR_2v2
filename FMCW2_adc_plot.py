@@ -11,7 +11,7 @@ SYNC1 = 0xC1C1
 SYNC2 = 0x9999
 SYNC3 = 0x00FF
 
-CHIRP_STEP = 1
+CHIRP_STEP = 4
 
 if OPERATING_SYSTEM == 1:
     BIN_FILE = "Radar_Records/data_record.bin"
@@ -21,7 +21,6 @@ else:
 
 INFO_SECTOR_SIZE = 512
 
-
 def read_u32_be(buf, offset):
     return (
         (buf[offset] << 24) |
@@ -30,10 +29,8 @@ def read_u32_be(buf, offset):
         buf[offset + 3]
     )
 
-
 def read_u16_be(buf, offset):
     return (buf[offset] << 8) | buf[offset + 1]
-
 
 # -----------------------------
 # Read file
@@ -221,7 +218,7 @@ for chirp_idx in range(0, num_chirps, CHIRP_STEP):
     ax.set_ylabel("ADC centered")
     ax.grid(True)
 
-    plt.pause(0.0001)
+    plt.pause(0.01)
 
 plt.ioff()
 plt.show()

@@ -9,14 +9,14 @@ import os
 import binascii
 from datetime import datetime
 
-RECORD_TIME         = 30            # in sec
+RECORD_TIME         = 20            # in sec
 TEST_DEVICE         = 1             # 0 STM32F4, 1 STM32H7, 2 FPGA
 OPERATING_SYSTEM    = 1             # 0 MAC, 1 UBUNTU, 2 WINDOWS (Havent implemented serial on windows.)
 
 # important note: After changing R and C values of pll circuit freq ramp bw values are perfect.
 # Notes: Current setup gives clean 50 MHz as well no noise at all on tune voltage ramp at 50 MHz (higher ramp is better any case)!!!
 SWEEP_START         = 5.20e9 
-SWEEP_BW            = 900e6
+SWEEP_BW            = 700e6
 
 # Radar 2 Card Log Settings:
 # 16 bit: 128 chirp 250us,  64chirp 500us,  32chirp 1000us 
@@ -25,8 +25,8 @@ SWEEP_BW            = 900e6
 # 10 bit: 128 chirp 250us,  64chirp 500us,  32chirp 1000us 
 
 DATA_LOG            = 0             # 0 for USB transfer, 1 for MicroCard Log
-SWEEP_TIME          = 150e-6       # 100 micro or 10 ms all working, sdcard log is designed for 128 chirp 250 m1icro for now
-CPI_CHIRP           = 32            # 1 for USB, 32 for 1ms SWEEP_TIME, 64 for 500, 128 for 250 16bit, 250 10 12 14 bit 64(max)
+SWEEP_TIME          = 100e-6       # 100 micro or 10 ms all working, sdcard log is designed for 128 chirp 250 m1icro for now
+CPI_CHIRP           = 128            # 1 for USB, 32 for 1ms SWEEP_TIME, 64 for 500, 128 for 250 16bit, 250 10 12 14 bit 64(max)
 ADC_RESOLUTION      = 10            # 10, 12, 14, 16
 SAMPLE_AVERAGING    = 1             # 1, 2, 4, 8, 16
 
@@ -62,7 +62,9 @@ if TEST_DEVICE == 1:
             freq = 3696000
         elif CPI_CHIRP == 128:
             freq = 3696000
-    
+        else:
+            freq = 3700000
+
     elif ADC_RESOLUTION == 14:
         if CPI_CHIRP == 32:
             freq = 4100000
@@ -70,13 +72,16 @@ if TEST_DEVICE == 1:
             freq = 4096000
         elif CPI_CHIRP == 128:
             freq = 4096000
-    
+        else:
+            freq = 4100000
     elif ADC_RESOLUTION == 12:
         if CPI_CHIRP == 32:
             freq = 4569000
         elif CPI_CHIRP == 64:
             freq = 4600000
         elif CPI_CHIRP == 128:
+            freq = 4600000
+        else:
             freq = 4600000
 
     elif ADC_RESOLUTION == 10:
@@ -86,6 +91,8 @@ if TEST_DEVICE == 1:
             freq = 5296000
         elif CPI_CHIRP == 128:
             freq = 5296000
+        else:
+            freq = 5300000
 
     SAMPLING_FREQUENCY = int(freq / SAMPLE_AVERAGING)
     NUMBER_OF_SAMPLES = int(SAMPLING_FREQUENCY * SWEEP_TIME) * 1  # NUMBER_OF_SAMPLES(16bit) = SAMPLING_FREQUENCY * SWEEP_TIME(int)
@@ -101,7 +108,7 @@ if TEST_DEVICE == 2:
 # 100MHz long range check: usable range 5.2 to 6.1 max and 5.2-5.3 is best 5.3 to 5.8 is good
 
 if DATA_LOG == 1:
-    SWEEP_GAP = 10 * 1.0e-6
+    SWEEP_GAP = 20 * 1.0e-6
     
     if TEST_DEVICE != 2:
         # overwrite these parameters for card log to card log
