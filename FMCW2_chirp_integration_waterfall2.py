@@ -13,7 +13,7 @@ SYNC3 = 0x00FF
 
 CHIRP_STEP = 1
 
-REMOVE_DC = False
+REMOVE_DC = True
 REMOVE_FIRST_N_BINS = 0
 
 if OPERATING_SYSTEM == 1:
@@ -23,7 +23,7 @@ elif OPERATING_SYSTEM == 2:
     BIN_FILE = r"C:\Users\CK\Desktop\flight_log.bin"
 
 INFO_SECTOR_SIZE = 512
-MAX_RANGE_DISPLAY = 90
+MAX_RANGE_DISPLAY = 3000
 
 
 def read_u32_be(buf, offset):

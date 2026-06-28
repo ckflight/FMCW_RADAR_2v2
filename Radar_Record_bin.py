@@ -9,14 +9,14 @@ import os
 import binascii
 from datetime import datetime
 
-RECORD_TIME         = 10            # in sec
+RECORD_TIME         = 30            # in sec
 TEST_DEVICE         = 1             # 0 STM32F4, 1 STM32H7, 2 FPGA
 OPERATING_SYSTEM    = 1             # 0 MAC, 1 UBUNTU, 2 WINDOWS (Havent implemented serial on windows.)
 
 # important note: After changing R and C values of pll circuit freq ramp bw values are perfect.
 # Notes: Current setup gives clean 50 MHz as well no noise at all on tune voltage ramp at 50 MHz (higher ramp is better any case)!!!
 SWEEP_START         = 5.20e9 
-SWEEP_BW            = 700e6
+SWEEP_BW            = 900e6
 
 # Radar 2 Card Log Settings:
 # 16 bit: 128 chirp 250us,  64chirp 500us,  32chirp 1000us 

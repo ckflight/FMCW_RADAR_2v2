@@ -14,8 +14,8 @@ SYNC3 = 0x00FF
 CHIRP_STEP = 1
 
 if OPERATING_SYSTEM == 1:
-    #BIN_FILE = "Radar_Records/data_record.bin"
-    BIN_FILE = "/home/ck/Desktop/flight_log.bin"
+    BIN_FILE = "Radar_Records/data_record.bin"
+    #BIN_FILE = "/home/ck/Desktop/flight_log.bin"
 else:
     BIN_FILE = r"C:\Users\CK\Desktop\flight_log.bin"
 
@@ -218,7 +218,7 @@ for chirp_idx in range(0, num_chirps, CHIRP_STEP):
     ax.set_ylabel("ADC centered")
     ax.grid(True)
 
-    plt.pause(0.01)
+    plt.pause(0.001)
 
 plt.ioff()
 plt.show()
