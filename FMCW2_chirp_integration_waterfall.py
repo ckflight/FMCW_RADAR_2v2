@@ -18,9 +18,12 @@ CHIRP_STEP = 1
 REMOVE_DC = True
 REMOVE_FIRST_N_BINS = 0
 
+NO_FLOOR_PLOT_DB = 35
+
 if OPERATING_SYSTEM == 1:
-    BIN_FILE = "Radar_Records/data_record.bin"
+    #BIN_FILE = "Radar_Records/data_record.bin"
     BIN_FILE = "/home/ck/Desktop/flight_log.bin"
+    BIN_FILE = "fmcw2_bin_files/road_log5_resized.bin"
 
 elif OPERATING_SYSTEM == 2:
     BIN_FILE = r"C:\Users\CK\Desktop\flight_log.bin"
@@ -355,7 +358,7 @@ for cpi_idx in range(0, FULL_CPI_COUNT, CHIRP_STEP):
     ymax = np.max(avg_range_limited)
     noise = noise_floor_dbfs
 
-    ax1.set_ylim(noise - 10, ymax + 5)
+    ax1.set_ylim(noise - NO_FLOOR_PLOT_DB/2, ymax + 5)
 
     ax1.set_title(
         f"Chirp Integrated Range Profile - CPI {cpi_idx + 1}/{FULL_CPI_COUNT} "
@@ -364,10 +367,10 @@ for cpi_idx in range(0, FULL_CPI_COUNT, CHIRP_STEP):
 
     waterfall_limited = waterfall[:, range_mask]
     img.set_data(waterfall_limited)
-    img.set_clim(np.max(waterfall_limited) - 30, np.max(waterfall_limited))
+    img.set_clim(np.max(waterfall_limited) - NO_FLOOR_PLOT_DB, np.max(waterfall_limited))
 
     img_rd.set_data(rd_map_limited)
-    img_rd.set_clim(np.max(rd_map_limited) - 30, np.max(rd_map_limited))
+    img_rd.set_clim(np.max(rd_map_limited) - NO_FLOOR_PLOT_DB, np.max(rd_map_limited))
 
     ax3.set_title(f"Range-Doppler Map - CPI {cpi_idx + 1}/{FULL_CPI_COUNT}")
 

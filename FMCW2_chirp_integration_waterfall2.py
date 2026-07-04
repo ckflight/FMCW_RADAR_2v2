@@ -18,7 +18,7 @@ REMOVE_FIRST_N_BINS = 0
 
 if OPERATING_SYSTEM == 1:
     BIN_FILE = "/home/ck/Desktop/flight_log.bin"
-    #BIN_FILE = "Radar_Records/data_record.bin"
+    BIN_FILE = "fmcw2_bin_files/road_log10_resized.bin"
 elif OPERATING_SYSTEM == 2:
     BIN_FILE = r"C:\Users\CK\Desktop\flight_log.bin"
 

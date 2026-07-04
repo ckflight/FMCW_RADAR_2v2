@@ -11,11 +11,13 @@ SYNC1 = 0xC1C1
 SYNC2 = 0x9999
 SYNC3 = 0x00FF
 
-CHIRP_STEP = 1
+CHIRP_STEP = 8
 
 if OPERATING_SYSTEM == 1:
-    BIN_FILE = "Radar_Records/data_record.bin"
-    #BIN_FILE = "/home/ck/Desktop/flight_log.bin"
+    #BIN_FILE = "Radar_Records/data_record.bin"
+    BIN_FILE = "/home/ck/Desktop/flight_log.bin"
+    #BIN_FILE = "fmcw2_bin_files/sar_log6.bin"
+
 else:
     BIN_FILE = r"C:\Users\CK\Desktop\flight_log.bin"
 

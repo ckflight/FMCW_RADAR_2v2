@@ -11,7 +11,7 @@ SYNC1 = 0xC1C1
 SYNC2 = 0x9999
 SYNC3 = 0x00FF
 
-CHIRP_STEP = 10
+CHIRP_STEP = 64
 FRAME_DELAY = 0.0001
 
 REMOVE_DC = True
@@ -24,7 +24,7 @@ INFO_SECTOR_SIZE = 512
 if OPERATING_SYSTEM == 1:
     BIN_FILE = "Radar_Records/data_record.bin"
     BIN_FILE = "/home/ck/Desktop/flight_log.bin"
-
+    #BIN_FILE = "fmcw2_bin_files/sar_log6.bin"
 else:
     BIN_FILE = r"C:\Users\CK\Desktop\flight_log.bin"
 

@@ -1,0 +1,445 @@
+import matplotlib.pyplot as plt
+import numpy as np
+from scipy import interpolate as interp
+import time
+
+
+# ============================================================
+# BIN FILE SETTINGS
+# ============================================================
+
+BIN_FILE = "fmcw2_bin_files/sar_log6.bin"
+
+USE_SYNC_HEADERS = True
+HEADER_SIZE = 4
+
+SYNC0 = 0x1C1C
+SYNC1 = 0xC1C1
+SYNC2 = 0x9999
+SYNC3 = 0x00FF
+
+INFO_SECTOR_SIZE = 512
+
+
+# ============================================================
+# SD-CARD RECORD CUT SETTINGS
+# ============================================================
+
+CUT_START_CPI = 40
+CUT_END_CPI = 20
+
+CUT_START_PERCENT = 0.00
+CUT_END_PERCENT = 0.00
+
+# Use all chirps, then resample non-uniform SD timing to uniform aperture
+USE_TRUE_SD_TIMING_RESAMPLE = True
+
+
+# ============================================================
+# HELPERS
+# ============================================================
+
+def read_u32_be(buf, offset):
+    return ((buf[offset] << 24) |
+            (buf[offset + 1] << 16) |
+            (buf[offset + 2] << 8) |
+            buf[offset + 3])
+
+
+def read_u16_be(buf, offset):
+    return (buf[offset] << 8) | buf[offset + 1]
+
+
+def hilbert_rvp(x, fs, kr):
+    y = np.fft.fft(x, axis=-1)
+    y[:, :y.shape[1] // 2 + 1] = 0
+    f = np.linspace(-fs / 2, fs / 2, y.shape[1])
+    y *= np.exp(-1j * np.pi * f**2 / kr)
+    return np.fft.ifft(y, axis=-1)
+
+
+# ============================================================
+# READ BIN HEADER
+# ============================================================
+
+with open(BIN_FILE, "rb") as f:
+    file_bytes = f.read()
+
+if len(file_bytes) < INFO_SECTOR_SIZE:
+    raise ValueError("File is smaller than 512-byte info sector")
+
+info = file_bytes[:INFO_SECTOR_SIZE]
+
+idx = 0
+
+RECORD_COUNTER_BIN = read_u32_be(info, idx); idx += 4
+RECORD_TIME = read_u32_be(info, idx); idx += 4
+SWEEP_TIME_US = read_u32_be(info, idx); idx += 4
+SWEEP_DELAY_US = read_u32_be(info, idx); idx += 4
+SWEEP_START_SCALED = read_u32_be(info, idx); idx += 4
+SWEEP_BW_SCALED = read_u32_be(info, idx); idx += 4
+FS_KHZ = read_u32_be(info, idx); idx += 4
+NUMBER_OF_SAMPLES = read_u32_be(info, idx); idx += 4
+
+TX_MODE = info[idx]; idx += 1
+TX_POWER_DBM = info[idx]; idx += 1
+TX_POWER_DBM_VOLTAGE = info[idx]; idx += 1
+
+hz_per_m = read_u32_be(info, idx); idx += 4
+
+DATA_LOG = info[idx]; idx += 1
+USB_DATA_TYPE = info[idx]; idx += 1
+ADC_RESOLUTION = info[idx]; idx += 1
+
+CHIRP_END_TIMER_US = read_u32_be(info, idx); idx += 4
+CPI_END_TIMER_US = read_u32_be(info, idx); idx += 4
+CARD_WRITE_END_TIMER_US = read_u32_be(info, idx); idx += 4
+
+CHIRPS_PER_CPI = read_u16_be(info, idx); idx += 2
+CPI_COUNTER = read_u32_be(info, idx); idx += 4
+
+RECORD_COUNTER_HEADER = CPI_COUNTER * CHIRPS_PER_CPI
+
+SWEEP_TIME = SWEEP_TIME_US / 1e6
+SWEEP_DELAY = SWEEP_DELAY_US / 1e6
+SWEEP_START = SWEEP_START_SCALED * 1e7
+SWEEP_BW = SWEEP_BW_SCALED * 1e6
+SAMPLING_FREQUENCY = FS_KHZ * 1000.0
+
+print("Record Counter Header:", RECORD_COUNTER_HEADER)
+print("Record Time:", RECORD_TIME, "sec.")
+print("Sweep Time:", SWEEP_TIME, "sec.")
+print("Sweep Delay:", SWEEP_DELAY, "sec.")
+print("Sweep Start:", SWEEP_START, "Hz")
+print("Sweep BW:", SWEEP_BW, "Hz")
+print("Sampling Frequency:", SAMPLING_FREQUENCY, "Hz")
+print("Samples per sweep:", NUMBER_OF_SAMPLES)
+print("Tx Mode:", TX_MODE)
+print("Tx Power:", TX_POWER_DBM, "dBm")
+print("Tx Power Voltage:", TX_POWER_DBM_VOLTAGE / 100.0, "V")
+print("Hz per m:", hz_per_m)
+print("Data Log:", DATA_LOG)
+print("USB Data Type:", USB_DATA_TYPE)
+print("ADC Resolution:", ADC_RESOLUTION)
+print("CHIRPS_PER_CPI:", CHIRPS_PER_CPI)
+print("CPI_COUNTER:", CPI_COUNTER)
+print("CHIRP_END_TIMER_US:", CHIRP_END_TIMER_US)
+print("CPI_END_TIMER_US:", CPI_END_TIMER_US)
+print("CARD_WRITE_END_TIMER_US:", CARD_WRITE_END_TIMER_US)
+
+
+# ============================================================
+# USER PARAMETERS
+# ============================================================
+
+speed = 2.0
+sample_increment = 1
+
+dynamic_range = 45
+cross_range_padding = 4
+ky_delta_spacing = 1.5
+window_fast = np.hanning
+window_slow = np.hanning
+
+remove_first_sweeps = 0
+remove_leakage_bins = 10
+remove_static_clutter = True
+
+use_rvp = True
+interp_kind = "cubic"
+
+c = 299792458.0
+
+
+# ============================================================
+# READ BIN ADC DATA
+# ============================================================
+
+if USE_SYNC_HEADERS:
+    words_per_chirp = NUMBER_OF_SAMPLES + HEADER_SIZE
+else:
+    words_per_chirp = NUMBER_OF_SAMPLES
+
+raw_data = file_bytes[INFO_SECTOR_SIZE:]
+data_u16 = np.frombuffer(raw_data, dtype="<u2")
+
+available_chirps = len(data_u16) // words_per_chirp
+available_chirps = min(available_chirps, RECORD_COUNTER_HEADER)
+
+if available_chirps <= 0:
+    raise RuntimeError("No complete chirps available")
+
+full_cpi_count = available_chirps // CHIRPS_PER_CPI
+usable_chirps = full_cpi_count * CHIRPS_PER_CPI
+
+if full_cpi_count <= 0:
+    raise RuntimeError("No complete CPI available")
+
+print("Available chirps:", available_chirps)
+print("Full CPI count:", full_cpi_count)
+print("Usable chirps:", usable_chirps)
+
+data_u16 = data_u16[:usable_chirps * words_per_chirp]
+chirps_raw = data_u16.reshape(usable_chirps, words_per_chirp)
+
+if USE_SYNC_HEADERS:
+    bad_headers = np.where(
+        (chirps_raw[:, 0] != SYNC0) |
+        (chirps_raw[:, 1] != SYNC1) |
+        (chirps_raw[:, 2] != SYNC2) |
+        (chirps_raw[:, 3] != SYNC3)
+    )[0]
+
+    print("Bad headers:", len(bad_headers))
+
+    if len(bad_headers) > 0:
+        print("First bad header indices:", bad_headers[:20])
+
+    chirps = chirps_raw[:, HEADER_SIZE:]
+else:
+    chirps = chirps_raw
+
+ADC_MASK = (1 << ADC_RESOLUTION) - 1
+chirps = chirps & ADC_MASK
+
+# Same ADC voltage conversion as your old txt code
+chirps = chirps.astype(np.float64)
+chirps = (chirps / (2 ** ADC_RESOLUTION)) * 3.3
+
+
+# ============================================================
+# CUT CPI AND BUILD DATA MATRIX
+# ============================================================
+
+chirps_cpi = chirps.reshape(full_cpi_count, CHIRPS_PER_CPI, NUMBER_OF_SAMPLES)
+
+start_cpi = CUT_START_CPI
+end_cpi = full_cpi_count - CUT_END_CPI
+
+if end_cpi <= start_cpi:
+    raise RuntimeError("Invalid CUT_START_CPI / CUT_END_CPI")
+
+chirps_cpi = chirps_cpi[start_cpi:end_cpi, :, :]
+
+percent_start = int(chirps_cpi.shape[0] * CUT_START_PERCENT)
+percent_end = int(chirps_cpi.shape[0] * CUT_END_PERCENT)
+
+start_idx = percent_start
+end_idx = chirps_cpi.shape[0] - percent_end
+
+if end_idx <= start_idx:
+    raise RuntimeError("Invalid CUT_START_PERCENT / CUT_END_PERCENT")
+
+chirps_cpi = chirps_cpi[start_idx:end_idx, :, :]
+
+num_cpi_used = chirps_cpi.shape[0]
+
+data1 = chirps_cpi.reshape(num_cpi_used * CHIRPS_PER_CPI, NUMBER_OF_SAMPLES)
+
+print("Used CPI:", num_cpi_used)
+print("Used chirps before timing resample:", data1.shape[0])
+
+
+# ============================================================
+# BUILD TRUE SD TIMING AND RESAMPLE TO UNIFORM APERTURE
+# ============================================================
+
+chirp_period = (SWEEP_TIME_US + SWEEP_DELAY_US) * 1e-6
+
+if (CPI_END_TIMER_US + CARD_WRITE_END_TIMER_US) > 0:
+    cpi_period = (CPI_END_TIMER_US + CARD_WRITE_END_TIMER_US) * 1e-6
+else:
+    cpi_period = (
+        CHIRPS_PER_CPI * (SWEEP_TIME_US + SWEEP_DELAY_US) +
+        CARD_WRITE_END_TIMER_US
+    ) * 1e-6
+
+if USE_TRUE_SD_TIMING_RESAMPLE:
+    t = np.zeros(data1.shape[0], dtype=np.float64)
+
+    k = 0
+    for cpi_i in range(num_cpi_used):
+        for chirp_i in range(CHIRPS_PER_CPI):
+            t[k] = cpi_i * cpi_period + chirp_i * chirp_period
+            k += 1
+
+    x = t * speed
+    x = x - np.mean(x)
+
+    dx_uniform = speed * chirp_period * sample_increment
+    x_uniform = np.arange(x[0], x[-1], dx_uniform)
+
+    print("True SD timing enabled")
+    print("chirp_period:", chirp_period, "s")
+    print("cpi_period:", cpi_period, "s")
+    print("aperture length:", x[-1] - x[0], "m")
+    print("uniform dx:", dx_uniform, "m")
+    print("uniform chirps:", len(x_uniform))
+
+    data_uniform = np.zeros((len(x_uniform), NUMBER_OF_SAMPLES), dtype=np.float64)
+
+    print("Resampling aperture...")
+    for s in range(NUMBER_OF_SAMPLES):
+        data_uniform[:, s] = np.interp(x_uniform, x, data1[:, s])
+
+    data1 = data_uniform
+
+else:
+    dx_uniform = speed * chirp_period * sample_increment
+
+if remove_first_sweeps > 0:
+    data1 = data1[remove_first_sweeps:, :]
+
+start_time = time.time()
+
+
+# ============================================================
+# BASIC PARAMETERS
+# ============================================================
+
+data = np.array(data1, dtype=np.float64)
+
+fs = SAMPLING_FREQUENCY
+tsweep = SWEEP_TIME
+bw = SWEEP_BW
+fc = SWEEP_START + bw / 2.0
+sweep_samples = data.shape[1]
+
+delta_crange = dx_uniform
+pri = delta_crange / speed
+lam = c / fc
+
+print("Cross-range delta {:.6f} m, {:.6f} lambda".format(delta_crange, delta_crange / lam))
+print("Equivalent PRI {:.6f} s, PRF {:.2f} Hz".format(pri, 1.0 / pri))
+print("Carrier {:.3f} GHz".format(fc / 1e9))
+
+
+# ============================================================
+# PREPROCESSING
+# ============================================================
+
+data = data - np.mean(data, axis=1, keepdims=True)
+
+wf = window_fast(sweep_samples)
+data = data * wf
+
+if use_rvp:
+    data = hilbert_rvp(data, fs, bw / tsweep)
+
+if remove_static_clutter:
+    data = data - np.mean(data, axis=0, keepdims=True)
+
+
+# ============================================================
+# CROSS-RANGE ZERO PADDING
+# ============================================================
+
+if cross_range_padding > 1:
+    zpad = int((cross_range_padding - 1) * data.shape[0])
+    data = np.pad(data, ((zpad // 2, zpad // 2), (0, 0)), mode='constant')
+
+ws = window_slow(data.shape[0])[:, None]
+data = data * ws
+
+
+# ============================================================
+# OMEGA-K SETUP
+# ============================================================
+
+kx = np.linspace(-np.pi / delta_crange, np.pi / delta_crange, data.shape[0])
+
+kr = np.linspace(
+    (4.0 * np.pi / c) * (fc - bw / 2.0),
+    (4.0 * np.pi / c) * (fc + bw / 2.0),
+    sweep_samples
+)
+
+cfft = np.fft.fftshift(np.fft.fft(data, axis=0), axes=0)
+
+if remove_leakage_bins > 0:
+    cfft[:, :remove_leakage_bins] = 0
+
+
+# ============================================================
+# STOLT INTERPOLATION
+# ============================================================
+
+kr_delta = kr[1] - kr[0]
+
+kx_max = np.max(np.abs(kx))
+ky0 = np.sqrt(max(kr[0] ** 2 - kx_max ** 2, 1e-12))
+ky_delta = ky_delta_spacing * kr_delta
+ky_even = np.arange(ky0, kr[-1], ky_delta)
+
+st = np.zeros((cfft.shape[0], len(ky_even)), dtype=np.complex128)
+
+print("Entering Stolt interpolation")
+
+for i in range(len(kx)):
+    val = kr**2 - kx[i]**2
+    valid = val > 0
+
+    if np.count_nonzero(valid) < 4:
+        continue
+
+    ky = np.sqrt(val[valid])
+    row = cfft[i, valid]
+
+    ky_unique, unique_idx = np.unique(ky, return_index=True)
+    row_unique = row[unique_idx]
+
+    if len(ky_unique) < 4:
+        continue
+
+    ci = interp.interp1d(
+        ky_unique,
+        row_unique,
+        kind=interp_kind,
+        bounds_error=False,
+        fill_value=0.0
+    )
+
+    st[i, :] = ci(ky_even)
+
+print("Finished Stolt interpolation")
+
+if 1:
+    wx = np.hanning(st.shape[0])
+    wy = np.hanning(st.shape[1])
+    st = st * np.sqrt(np.outer(wx, wy))
+
+
+# ============================================================
+# IMAGE FORMATION
+# ============================================================
+
+img = np.fft.ifft2(st)
+img = np.fft.fftshift(img, axes=0)
+
+mid = img.shape[0] // 2
+upper = img[:mid, :]
+lower = img[mid:, :]
+
+img_combined = np.vstack((lower, upper))
+
+range1 = c * (fs / 2.0) * tsweep / (2.0 * bw)
+crange = delta_crange * img_combined.shape[0]
+
+img_db = 20 * np.log10(np.abs(img_combined) + 1e-12)
+
+plt.figure(figsize=(9, 7))
+plt.title("SAR Image (BIN parser + true SD timing)")
+plt.imshow(
+    img_db,
+    aspect='auto',
+    interpolation='none',
+    extent=[0, range1, -crange / 2.0, crange / 2.0],
+    origin='lower'
+)
+m = np.max(img_db)
+plt.clim(m - dynamic_range, m)
+plt.colorbar(label='dB')
+plt.xlabel("Range [m]")
+plt.ylabel("Cross-range [m]")
+plt.tight_layout()
+plt.show()

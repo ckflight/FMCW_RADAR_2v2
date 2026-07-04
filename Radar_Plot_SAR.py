@@ -126,6 +126,10 @@ line_counter += 1
 PHASE_DISTANCE = int(data[0:len(data) - 1])
 print("Phase Distance : ", str(PHASE_DISTANCE))
 
+CHIRP_NUMBER = str(record_file.readline())
+line_counter += 1
+print("Chirp Number: ", str(CHIRP_NUMBER))
+
 RECORD_DATE = str(record_file.readline())
 line_counter += 1
 print("Date: ", str(RECORD_DATE))
@@ -271,7 +275,7 @@ kr_delta = kr[1] - kr[0]
 ky_delta = ky_delta_spacing * kr_delta
 ky_even = np.arange(ky0, kr[-1], ky_delta)
 
-st = np.zeros((cfft.shape[0], len(ky_even)), dtype=np.complex_(1))
+st = np.zeros((cfft.shape[0], len(ky_even)), dtype=np.complex128)
 
 print("entering slot interpolation")
 #Stolt interpolation
