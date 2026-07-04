@@ -23,9 +23,9 @@ I am posting the processing files i have done on host side with Python for anyon
  * Port are better matched compared to the previous version which decreases reflection. Therefore, power is efficiently transferred without any loss. In this design radar can benefit from maximum gain without any loss.
 
 ## FMCW2_chirp_integration_waterfall.py
-Plots range doppler map for sdcard chirp integration mode.
-<img width="720" height="406" alt="Image" src="https://github.com/user-attachments/assets/0d0e95dd-ff7b-493c-b147-7f216cb9a61e" />
-   
+2D Range-Doppler map generated from SD card chirp integration data, showing moving vehicles on a roadway.
+<img width="720" height="406" alt="Image" src="https://github.com/user-attachments/assets/b71b6ef7-48ec-47a3-8244-f8cf0fc10217" />
+
 ## Radar_Plot_QT.py
 It plots the radar data with Python Qt5 and Vispy plotting tool which uses GPU instead of CPU. Code plots the time domain, frequency domain, dBFS noise floor and phase through the whole sampling frequecy spectrum together with scale and restart options. It has thread based approach between Vispy and Qt classes by using DataSource which allows us to manage more data. The code has different filtering options and also can plot faster by decreasing frequency range.
 
