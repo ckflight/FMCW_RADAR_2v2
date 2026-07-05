@@ -1,5 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
+from scipy.signal import firwin, lfilter, freqz
 
 # This code is for .bin files logged with radar2v2 sdcard
 
@@ -15,24 +16,32 @@ SYNC3 = 0x00FF
 
 CHIRP_STEP = 1
 
-REMOVE_DC = True
+REMOVE_DC = False
 REMOVE_FIRST_N_BINS = 0
 
-NO_FLOOR_PLOT_DB = 35
+# Set noise floor threshold, higher value more detail closer to noise floor
+WATERFALL_NF_DB = 30
+DOPPLER_NF_DB = 30
 
 if OPERATING_SYSTEM == 1:
     #BIN_FILE = "Radar_Records/data_record.bin"
     BIN_FILE = "/home/ck/Desktop/flight_log.bin"
-    BIN_FILE = "fmcw2_bin_files/road_log5_resized.bin"
+    #BIN_FILE = "fmcw2_bin_files/road_log5_resized.bin"
 
 elif OPERATING_SYSTEM == 2:
     BIN_FILE = r"C:\Users\CK\Desktop\flight_log.bin"
+
+# FIR FILTER SETTINS AND GENERATION
+HPF_ENABLE = True
+HPF_CUTOFF_HZ = 300e3
+HPF_NUM_TAPS = 31
 
 INFO_SECTOR_SIZE  = 512
 MAX_RANGE_DISPLAY = 50000
 
 NOISE_RANGE_MIN = 0
 NOISE_RANGE_MAX = MAX_RANGE_DISPLAY
+
 
 
 def read_u32_be(buf, offset):
@@ -238,6 +247,18 @@ FS_PEAK = ADC_CENTER
 
 chirps = chirps.astype(np.float32) - ADC_CENTER
 
+# FIR HPF 
+print("Applying high pass fir filter")
+
+hpf_taps = firwin(
+    HPF_NUM_TAPS,
+    HPF_CUTOFF_HZ,
+    fs=FS,
+    pass_zero=False,      # high-pass
+    window="hamming"
+)
+
+chirps = lfilter(hpf_taps, 1.0, chirps, axis = 1)
 
 freq_hz = np.fft.rfftfreq(SAMPLES_PER_CHIRP, d=1.0 / FS)
 
@@ -358,7 +379,7 @@ for cpi_idx in range(0, FULL_CPI_COUNT, CHIRP_STEP):
     ymax = np.max(avg_range_limited)
     noise = noise_floor_dbfs
 
-    ax1.set_ylim(noise - NO_FLOOR_PLOT_DB/2, ymax + 5)
+    ax1.set_ylim(noise - 30, ymax + 5)
 
     ax1.set_title(
         f"Chirp Integrated Range Profile - CPI {cpi_idx + 1}/{FULL_CPI_COUNT} "
@@ -367,10 +388,10 @@ for cpi_idx in range(0, FULL_CPI_COUNT, CHIRP_STEP):
 
     waterfall_limited = waterfall[:, range_mask]
     img.set_data(waterfall_limited)
-    img.set_clim(np.max(waterfall_limited) - NO_FLOOR_PLOT_DB, np.max(waterfall_limited))
+    img.set_clim(np.max(waterfall_limited) - WATERFALL_NF_DB, np.max(waterfall_limited))
 
     img_rd.set_data(rd_map_limited)
-    img_rd.set_clim(np.max(rd_map_limited) - NO_FLOOR_PLOT_DB, np.max(rd_map_limited))
+    img_rd.set_clim(np.max(rd_map_limited) - DOPPLER_NF_DB, np.max(rd_map_limited))
 
     ax3.set_title(f"Range-Doppler Map - CPI {cpi_idx + 1}/{FULL_CPI_COUNT}")
 
