@@ -1,6 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from scipy.signal import firwin, lfilter, freqz
+from scipy.signal import butter, sosfilt
 
 # This code is for .bin files logged with radar2v2 sdcard
 
@@ -16,7 +16,7 @@ SYNC3 = 0x00FF
 
 CHIRP_STEP = 1
 
-REMOVE_DC = False
+REMOVE_DC = True
 REMOVE_FIRST_N_BINS = 0
 
 # Set noise floor threshold, higher value more detail closer to noise floor
@@ -24,17 +24,12 @@ WATERFALL_NF_DB = 30
 DOPPLER_NF_DB = 30
 
 if OPERATING_SYSTEM == 1:
-    #BIN_FILE = "Radar_Records/data_record.bin"
+    BIN_FILE = "Radar_Records/data_record.bin"
     BIN_FILE = "/home/ck/Desktop/flight_log.bin"
-    #BIN_FILE = "fmcw2_bin_files/road_log5_resized.bin"
+    #BIN_FILE = "fmcw2_bin_files/hwfir_terrace.bin"
 
 elif OPERATING_SYSTEM == 2:
     BIN_FILE = r"C:\Users\CK\Desktop\flight_log.bin"
-
-# FIR FILTER SETTINS AND GENERATION
-HPF_ENABLE = True
-HPF_CUTOFF_HZ = 300e3
-HPF_NUM_TAPS = 31
 
 INFO_SECTOR_SIZE  = 512
 MAX_RANGE_DISPLAY = 50000
@@ -246,19 +241,6 @@ ADC_CENTER = 1 << (ADC_BITS - 1)
 FS_PEAK = ADC_CENTER
 
 chirps = chirps.astype(np.float32) - ADC_CENTER
-
-# FIR HPF 
-print("Applying high pass fir filter")
-
-hpf_taps = firwin(
-    HPF_NUM_TAPS,
-    HPF_CUTOFF_HZ,
-    fs=FS,
-    pass_zero=False,      # high-pass
-    window="hamming"
-)
-
-chirps = lfilter(hpf_taps, 1.0, chirps, axis = 1)
 
 freq_hz = np.fft.rfftfreq(SAMPLES_PER_CHIRP, d=1.0 / FS)
 

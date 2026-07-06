@@ -15,8 +15,14 @@ OPERATING_SYSTEM    = 1             # 0 MAC, 1 UBUNTU, 2 WINDOWS (Havent impleme
 
 # important note: After changing R and C values of pll circuit freq ramp bw values are perfect.
 # Notes: Current setup gives clean 50 MHz as well no noise at all on tune voltage ramp at 50 MHz (higher ramp is better any case)!!!
-SWEEP_START         = 5.20e9 
-SWEEP_BW            = 600e6
+
+# Blue patch lhcp tx rhcp rx 50 ohm terminated 5.50 200mhz 500us 128 10bit usb mode on off tx (but antenna placement is improtant it affects s11)
+# Horn antenna 5.40 200mhz 500us 128 10bit usb mode on off tx 
+# Horn antenna 5.95 200mhz 500us 128 10bit usb mode on off tx 
+# Horn antenna 5.95 200mhz 1000us 64 10bit usb mode on off tx 
+# Horn antenna 5.95 200mhz 1000us 64 10bit sdcard on off tx 
+SWEEP_START         = 5.95e9 
+SWEEP_BW            = 200e6
 
 # Radar 2 Card Log Settings:
 # 16 bit: 128 chirp 250us,  64chirp 500us,  32chirp 1000us  
@@ -24,13 +30,13 @@ SWEEP_BW            = 600e6
 # 12 bit: 128 chirp 250us,  64chirp 500us,  32chirp 1000us 
 # 10 bit: 128 chirp 250us,  64chirp 500us,  32chirp 1000us, 16chirp 2000us, 8chirp 4000us, 4chirp 8000us,  
 
-DATA_LOG            = 1              # 0 for USB transfer, 1 for MicroCard Log
-SWEEP_TIME          = 1000e-6        # 100 micro or 10 ms all working, sdcard log is designed for 128 chirp 250 m1icro for now
+DATA_LOG            = 1             # 0 for USB transfer, 1 for MicroCard Log
+SWEEP_TIME          = 1000e-6       # 100 micro or 10 ms all working, sdcard log is designed for 128 chirp 250 m1icro for now
 CPI_CHIRP           = 32            # 1 for USB, 32 for 1ms SWEEP_TIME, 64 for 500, 128 for 250 16bit, 250 10 12 14 bit 64(max)
 ADC_RESOLUTION      = 10            # 10, 12, 14, 16
 SAMPLE_AVERAGING    = 1             # 1, 2, 4, 8, 16
 
-TX_MODE             = 0             # 0 for continuous tx, 1 for on off with tx, 2 for testing when tx off
+TX_MODE             = 1             # 0 for continuous tx, 1 for on off with tx, 2 for testing when tx off
 SWEEP_TYPE          = 0             # 0 for Sawtooth, 1 for Triangular
 USE_PLL             = 1             # 0 for DAC, 1 for PLL
 

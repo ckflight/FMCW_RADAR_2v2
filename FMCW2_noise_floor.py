@@ -12,7 +12,7 @@ SYNC1 = 0xC1C1
 SYNC2 = 0x9999
 SYNC3 = 0x00FF
 
-CHIRP_STEP = 1
+CHIRP_STEP = 64
 FRAME_DELAY = 0.0001
 
 REMOVE_DC = True
@@ -20,16 +20,12 @@ USE_WINDOW = True
 IGNORE_FIRST_BINS = 10
 NOISE_PERCENTILE = 20
 
-HPF_ENABLE = True
-HPF_CUTOFF_HZ = 250e3
-HPF_NUM_TAPS = 31
-
 INFO_SECTOR_SIZE = 512
 
 if OPERATING_SYSTEM == 1:
     BIN_FILE = "Radar_Records/data_record.bin"
-    #BIN_FILE = "/home/ck/Desktop/flight_log.bin"
-    #BIN_FILE = "fmcw2_bin_files/sar_log6.bin"
+    BIN_FILE = "/home/ck/Desktop/flight_log.bin"
+    #BIN_FILE = "fmcw2_bin_files/hwfir_terrace.bin"
 else:
     BIN_FILE = r"C:\Users\CK\Desktop\flight_log.bin"
 
@@ -198,22 +194,6 @@ print(f"Raw max            : {int(chirps.max())}")
 print(f"Raw mean           : {float(chirps.mean()):.2f}")
 
 chirps = chirps.astype(np.float32) - ADC_CENTER
-
-if HPF_ENABLE:
-    print("\n----- FIR HPF -----")
-    print(f"HPF cutoff         : {HPF_CUTOFF_HZ / 1e3:.1f} kHz")
-    print(f"HPF taps           : {HPF_NUM_TAPS}")
-
-    hpf_taps = firwin(
-        HPF_NUM_TAPS,
-        HPF_CUTOFF_HZ,
-        fs=FS,
-        pass_zero=False,
-        window="hamming"
-    )
-
-    # Same simple per-chirp FIR method as your other code
-    chirps = lfilter(hpf_taps, 1.0, chirps, axis=1)
 
 # -----------------------------
 # FFT function

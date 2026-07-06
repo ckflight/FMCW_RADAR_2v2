@@ -15,7 +15,7 @@ SYNC3 = 0x00FF
 if OPERATING_SYSTEM == 1:
     BIN_FILE = "Radar_Records/data_record.bin"
     #BIN_FILE = "/home/ck/Desktop/flight_log.bin"
-    #BIN_FILE = "fmcw2_bin_files/sar_log6.bin"
+    #BIN_FILE = "fmcw2_bin_files/hwfir_terrace.bin"
 
 elif OPERATING_SYSTEM == 2:
     BIN_FILE = r"C:\Users\CK\Desktop\flight_log.bin"
@@ -24,16 +24,10 @@ INFO_SECTOR_SIZE = 512
 MAX_RANGE_TO_SHOW = 100
 
 AUTO_PICK_BIN = True
-FORCED_BIN = 54
-IGNORE_FIRST_BINS = 5
-AVG_CHIRPS_FOR_BIN_PICK = 256
+FORCED_BIN = 41
+IGNORE_FIRST_BINS = 0
+AVG_CHIRPS_FOR_BIN_PICK = 128
 DISPLAY_EVERY_N_CPI = 1
-
-# FIR HPF settings
-HPF_ENABLE = True
-HPF_CUTOFF_HZ = 250e3
-HPF_NUM_TAPS = 31
-
 
 def read_u32_be(buf, offset):
     return ((buf[offset] << 24) |
@@ -202,28 +196,6 @@ ADC_CENTER = float(1 << (ADC_BITS - 1))
 
 chirps = chirps & ADC_MASK
 chirps = chirps.astype(np.float32) - ADC_CENTER
-
-# -----------------------------
-# FIR HPF, same simple per-chirp method
-# -----------------------------
-if HPF_ENABLE:
-    print("\n----- FIR HPF -----")
-    print(f"HPF cutoff          : {HPF_CUTOFF_HZ / 1e3:.1f} kHz")
-    print(f"HPF taps            : {HPF_NUM_TAPS}")
-    print(f"HPF delay           : {(HPF_NUM_TAPS - 1) / 2:.1f} samples")
-
-    hpf_taps = firwin(
-        HPF_NUM_TAPS,
-        HPF_CUTOFF_HZ,
-        fs=FS,
-        pass_zero=False,
-        window="hamming"
-    )
-
-    # Same method as your range/noise plot:
-    # each chirp is filtered independently along fast-time samples.
-    chirps = lfilter(hpf_taps, 1.0, chirps, axis=1)
-
 
 # -----------------------------
 # Keep only full CPIs
