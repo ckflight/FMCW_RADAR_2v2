@@ -30,9 +30,9 @@ SWEEP_BW            = 200e6
 # 12 bit: 128 chirp 250us,  64chirp 500us,  32chirp 1000us 
 # 10 bit: 128 chirp 250us,  64chirp 500us,  32chirp 1000us, 16chirp 2000us, 8chirp 4000us, 4chirp 8000us,  
 
-DATA_LOG            = 1             # 0 for USB transfer, 1 for MicroCard Log
-SWEEP_TIME          = 1000e-6       # 100 micro or 10 ms all working, sdcard log is designed for 128 chirp 250 m1icro for now
-CPI_CHIRP           = 32            # 1 for USB, 32 for 1ms SWEEP_TIME, 64 for 500, 128 for 250 16bit, 250 10 12 14 bit 64(max)
+DATA_LOG            = 0             # 0 for USB transfer, 1 for MicroCard Log
+SWEEP_TIME          = 400e-6       # 100 micro or 10 ms all working, sdcard log is designed for 128 chirp 250 m1icro for now
+CPI_CHIRP           = 128            # 1 for USB, 32 for 1ms SWEEP_TIME, 64 for 500, 128 for 250 16bit, 250 10 12 14 bit 64(max)
 ADC_RESOLUTION      = 10            # 10, 12, 14, 16
 SAMPLE_AVERAGING    = 1             # 1, 2, 4, 8, 16
 

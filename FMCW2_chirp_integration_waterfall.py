@@ -25,7 +25,7 @@ DOPPLER_NF_DB = 30
 
 if OPERATING_SYSTEM == 1:
     BIN_FILE = "Radar_Records/data_record.bin"
-    BIN_FILE = "/home/ck/Desktop/flight_log.bin"
+    #BIN_FILE = "/home/ck/Desktop/horn_200mhz_5G95_1000us_32_cleanplot.bin"
     #BIN_FILE = "fmcw2_bin_files/hwfir_terrace.bin"
 
 elif OPERATING_SYSTEM == 2:
