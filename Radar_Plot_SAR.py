@@ -1,182 +1,147 @@
 import matplotlib.pyplot as plt
 import numpy as np
 from scipy import interpolate as interp
-from scipy.signal import hilbert
 import time
 
-def lanczos_interp1d(x, y):
-
-    a = 3
-    def finterp(xn):
-        y_new = np.zeros(xn.shape[0], dtype=y.dtype)
-        diff = np.ediff1d(x, to_end=x[-1]-x[-2])
-        for e, xi in enumerate(xn):
-            if xi < x[0] or xi > x[-1]:
-                continue
-            x0 = np.searchsorted(x, xi)
-            for i in range(max(0, x0-a), min(len(x), x0+a+1)):
-                z = (xi - x[i]) / diff[i]
-                y_new[e] += y[i] * np.sinc(z) * np.sinc(z/a)
-        return y_new
-
-    return finterp
-
-def f_to_d(f, bw, sweep_length):
-    c = 299792458.0
-    return c*f/(2*(bw/sweep_length))
-
-def r4_normalize(x, d, e=4):
-    y = np.fft.rfft(x, axis=-1)
-    n = d[-1]**e
-    y = y*d**e/n
-    return np.fft.irfft(y, axis=-1)
-
-def rvp_compensation(x, f, kr):
-    return x * np.exp(-1j * np.pi * f**2 / kr)
 
 def hilbert_rvp(x, fs, kr):
     y = np.fft.fft(x, axis=-1)
-    y[:,:y.shape[1]//2+1] = 0 # Zero positive frequencies
-    # Residual video phase term compensation
-    f = np.linspace(-fs/2, fs/2, y.shape[1])
+    y[:, :y.shape[1] // 2 + 1] = 0   # keep negative-frequency analytic form like your original
+    f = np.linspace(-fs / 2, fs / 2, y.shape[1])
     y *= np.exp(-1j * np.pi * f**2 / kr)
     return np.fft.ifft(y, axis=-1)
 
 
+# ============================================================
+# FILE READ
+# ============================================================
+
 record_file = open("Radar_Records/radar2v2_horn_48kHz_2024_04_09_16_41_58_parking_lot_sar.txt", "r")
 line_counter = 0
 
-data = str(record_file.readline())
-line_counter += 1
-RECORD_COUNTER = int(int(data[0:len(data) - 1]) * 70 / 100)
-print("Record Counter: ", str(RECORD_COUNTER))
+data = str(record_file.readline()); line_counter += 1
+RECORD_COUNTER = int(int(data[0:len(data) - 1]) * 100 / 100)
+print("Record Counter:", RECORD_COUNTER)
 
-data = str(record_file.readline())
-line_counter += 1
+data = str(record_file.readline()); line_counter += 1
 RECORD_TIME = int(data[0:len(data) - 1])
-print("Record Time: ", str(RECORD_TIME), " sec.")
+print("Record Time:", RECORD_TIME, "sec.")
 
-data = str(record_file.readline())
-line_counter += 1
-SWEEP_TIME = int(data[0:len(data) - 1]) / 1000000
-print("Sweep Time : ", str(SWEEP_TIME), " microsec.")
+data = str(record_file.readline()); line_counter += 1
+SWEEP_TIME = int(data[0:len(data) - 1]) / 1e6
+print("Sweep Time:", SWEEP_TIME, "sec.")
 
-data = str(record_file.readline())
-line_counter += 1
-SWEEP_DELAY = int(data[0:len(data) - 1]) / 1000000
-print("Sweep Delay : ", str(SWEEP_DELAY), " microsec.")
+data = str(record_file.readline()); line_counter += 1
+SWEEP_DELAY = int(data[0:len(data) - 1]) / 1e6
+print("Sweep Delay:", SWEEP_DELAY, "sec.")
 
-data = str(record_file.readline())
-line_counter += 1
+data = str(record_file.readline()); line_counter += 1
 SWEEP_START = int(data[0:len(data) - 1])
-print("Sweep Start : ", str(SWEEP_START), " Hz")
+print("Sweep Start:", SWEEP_START, "Hz")
 
-data = str(record_file.readline())
-line_counter += 1
+data = str(record_file.readline()); line_counter += 1
 SWEEP_BW = int(data[0:len(data) - 1])
-print("Sweep BW : ", str(SWEEP_BW), " Hz")
+print("Sweep BW:", SWEEP_BW, "Hz")
 
-data = str(record_file.readline())
-line_counter += 1
+data = str(record_file.readline()); line_counter += 1
 SAMPLING_FREQUENCY = int(data[0:len(data) - 1])
-print("Sampling Freqeuncy : ", str(SAMPLING_FREQUENCY), " Hz.")
+print("Sampling Frequency:", SAMPLING_FREQUENCY, "Hz")
 
-data = str(record_file.readline())
-line_counter += 1
+data = str(record_file.readline()); line_counter += 1
 NUMBER_OF_SAMPLES = int(data[0:len(data) - 1])
-print("Samples per sweep : ", str(NUMBER_OF_SAMPLES))
+print("Samples per sweep:", NUMBER_OF_SAMPLES)
 
-data = str(record_file.readline())
-line_counter += 1
+data = str(record_file.readline()); line_counter += 1
 TX_MODE = int(data[0:len(data) - 1])
-print("Tx Mode : ", str(TX_MODE))
+print("Tx Mode:", TX_MODE)
 
-data = str(record_file.readline())
-line_counter += 1
+data = str(record_file.readline()); line_counter += 1
 TX_POWER_DBM = int(data[0:len(data) - 1])
-print("Tx Power : ", str(TX_POWER_DBM), " dBm.")
+print("Tx Power:", TX_POWER_DBM, "dBm")
 
-data = str(record_file.readline())
-line_counter += 1
+data = str(record_file.readline()); line_counter += 1
 TX_POWER_DBM_VOLTAGE = int(data[0:len(data) - 1])
-print("Tx Power : ", str(TX_POWER_DBM_VOLTAGE / 100.0), " volts.")
+print("Tx Power Voltage:", TX_POWER_DBM_VOLTAGE / 100.0, "V")
 
-data = str(record_file.readline())
-line_counter += 1
+data = str(record_file.readline()); line_counter += 1
 hz_per_m = int(data[0:len(data) - 1])
-print("Hz per m : ", str(hz_per_m))
+print("Hz per m:", hz_per_m)
 
-data = str(record_file.readline())
-line_counter += 1
+data = str(record_file.readline()); line_counter += 1
 DATA_LOG = int(data[0:len(data) - 1])
-print("Data Log : ", str(DATA_LOG))
+print("Data Log:", DATA_LOG)
 
-data = str(record_file.readline())
-line_counter += 1
+data = str(record_file.readline()); line_counter += 1
 USB_DATA_TYPE = int(data[0:len(data) - 1])
-print("USB Data Type : ", str(USB_DATA_TYPE))
+print("USB Data Type:", USB_DATA_TYPE)
 
-data = str(record_file.readline())
-line_counter += 1
+data = str(record_file.readline()); line_counter += 1
 ADC_RESOLUTION = int(data[0:len(data) - 1])
-print("ADC Resolution : ", str(ADC_RESOLUTION))
+print("ADC Resolution:", ADC_RESOLUTION)
 
-data = str(record_file.readline())
-line_counter += 1
+data = str(record_file.readline()); line_counter += 1
 PHASE_DISTANCE = int(data[0:len(data) - 1])
-print("Phase Distance : ", str(PHASE_DISTANCE))
+print("Phase Distance:", PHASE_DISTANCE)
 
 CHIRP_NUMBER = str(record_file.readline())
 line_counter += 1
 print("Chirp Number: ", str(CHIRP_NUMBER))
 
-RECORD_DATE = str(record_file.readline())
-line_counter += 1
-print("Date: ", str(RECORD_DATE))
+RECORD_DATE = str(record_file.readline()); line_counter += 1
+print("Date:", RECORD_DATE)
 
-rs                  = 0
-speed               = 1.75
-interpolate         = 1 #IFFT zero-padding amount, smooths final image
-cross_range_padding = 2 #FFT zero-padding amount, increases cross-range with reduced resolution
-dynamic_range       = 60 #Dynamic range of final image in dB
-ky_delta_spacing    = 1.80
-window              = np.hanning
-c                   = 299792458
+# ============================================================
+# USER PARAMETERS
+# ============================================================
 
-# rows of a column are adc data and columns are record counte
-sample_increment    = 1
-data_counter        = 0 # ignore first recordings until car moves
+speed = 2.0                 # tune this
+sample_increment = 1
+data_counter = 0
 
-data1               = np.zeros([int(RECORD_COUNTER/sample_increment)-data_counter, NUMBER_OF_SAMPLES])
+dynamic_range = 45
+cross_range_padding = 4      # 1 raw, 2-4 smoother
+ky_delta_spacing = 1.5      # smaller than 1.8 -> better focus usually
+window_fast = np.hanning
+window_slow = np.hanning
 
-for i in range(data_counter):
-    sample_line = record_file.readline()
+remove_first_sweeps = 0
+remove_leakage_bins = 10
+remove_static_clutter = True
+
+use_rvp = True               # keep True for Omega-K first
+interp_kind = "cubic"        # 'linear' or 'cubic'
+
+c = 299792458.0
+
+# ============================================================
+# LOAD RAW SWEEPS
+# ============================================================
+
+data1 = np.zeros([int(RECORD_COUNTER / sample_increment) - data_counter, NUMBER_OF_SAMPLES], dtype=np.float64)
+
+for _ in range(data_counter):
+    _ = record_file.readline()
 
 sample_counter = 0
 
 while data_counter < RECORD_COUNTER:
-
     sample_line = record_file.readline()
-    samples_hex = bytes.fromhex(sample_line)  # get hex data from string
+    samples_hex = bytes.fromhex(sample_line)
     length_line = len(samples_hex)
 
     if USB_DATA_TYPE == 0:
-        # at this point samples_hex array have float values of each adc samples
         samples_hex_ = [i / 150.0 for i in samples_hex]
         samples_float = [i * 3.3 for i in samples_hex_]
-
         data1[sample_counter, :] = samples_float
         sample_counter += 1
 
     elif USB_DATA_TYPE == 1:
-
         index = 0
         append_counter = 0
 
         while index < length_line:
-
             current_sample_16bit = ((samples_hex[index] & 0xFF) << 8) | (samples_hex[index + 1] & 0xFF)
-            current_sample_float = (current_sample_16bit / 2 ** ADC_RESOLUTION) * 3.3
+            current_sample_float = (current_sample_16bit / (2 ** ADC_RESOLUTION)) * 3.3
 
             index += 2
             data1[sample_counter, append_counter] = current_sample_float
@@ -186,140 +151,205 @@ while data_counter < RECORD_COUNTER:
 
     data_counter += sample_increment
 
+record_file.close()
+
+if remove_first_sweeps > 0:
+    data1 = data1[remove_first_sweeps:, :]
+
 start_time = time.time()
 
-data = np.array(data1)
+# ============================================================
+# BASIC PARAMETERS
+# ============================================================
 
-fs              = SAMPLING_FREQUENCY
-tsweep          = SWEEP_TIME
-tdelay          = SWEEP_DELAY + ((SWEEP_TIME + SWEEP_DELAY) * (sample_increment - 1))
-bw              = SWEEP_BW
-fc              = SWEEP_START + bw/2
-sweep_samples   = len(data[0])
-delta_crange    = (tsweep + tdelay) * speed
-print('Cross range delta {:.3f} m, {:.3f} lambda'.format(delta_crange, delta_crange/(c/fc)))
+data = np.array(data1, dtype=np.float64)
 
-f = np.linspace(0, fs/2, sweep_samples//2+1)
-d = f_to_d(f, bw, tsweep)
+fs = SAMPLING_FREQUENCY
+tsweep = SWEEP_TIME
+tdelay = SWEEP_DELAY + ((SWEEP_TIME + SWEEP_DELAY) * (sample_increment - 1))
+bw = SWEEP_BW
+fc = SWEEP_START + bw / 2.0
+sweep_samples = data.shape[1]
 
-range0      = 0
-range1      = c*(fs/2.0)*tsweep/(2*bw)
-delta_range = range1/sweep_samples
-crange0     = -len(data)*delta_crange/2.0
-crange1     = len(data)*delta_crange/2.0
-raw_extent  = (range0, range1, crange0, crange1)
+pri = tsweep + tdelay
+delta_crange = pri * speed
+lam = c / fc
 
-#Window data
-data = data * window(sweep_samples)
+print("Cross-range delta {:.6f} m, {:.6f} lambda".format(delta_crange, delta_crange / lam))
+print("PRI {:.6f} s, PRF {:.2f} Hz".format(pri, 1.0 / pri))
+print("Carrier {:.3f} GHz".format(fc / 1e9))
 
-print('Sweep points', sweep_samples)
+# ============================================================
+# PREPROCESSING
+# ============================================================
 
-#Hilbert transformation to get complex data
-data = hilbert_rvp(data, fs, bw/tsweep)
+# Remove DC per chirp
+data = data - np.mean(data, axis=1, keepdims=True)
 
-# plot raw data
+# Fast-time window
+wf = window_fast(sweep_samples)
+data = data * wf
+
+# Analytic signal + RVP compensation (for Omega-K path)
+if use_rvp:
+    data = hilbert_rvp(data, fs, bw / tsweep)
+
+# Remove static clutter across chirps
+if remove_static_clutter:
+    data = data - np.mean(data, axis=0, keepdims=True)
+
+# Optional quick debug
 if 0:
-    shdata = 20*np.log10(np.abs(np.real([np.fft.rfft(r) for r in data])))
+    tmp = 20 * np.log10(np.abs(np.fft.fft(data, axis=1)) + 1e-12)
     plt.figure()
-    plt.title('Raw data, range FFT')
-    imgplot = plt.imshow(shdata, aspect='auto', interpolation='none', extent=raw_extent)
-    plt.xlabel('Range [m]')
-    plt.ylabel('Cross-range [m]')
-    m = np.max(shdata)
-    #Limit the dynamic range to clean the rounding errors
-    imgplot.set_clim(m-dynamic_range,m)
+    plt.title("Range FFT debug")
+    plt.imshow(tmp, aspect='auto', interpolation='none')
+    plt.show()
 
-if 0:
-    plt.figure()
-    plt.title('Raw data')
-    kr0 = (4*np.pi/c)*(fc - bw/2)
-    kr1 = (4*np.pi/c)*(fc + bw/2)
-    plt.imshow(data.real, aspect='auto', interpolation='none', extent=(kr0, kr1, crange0, crange1))
-    plt.xlabel('Range wavenumber [1/m]')
-    plt.ylabel('Cross-range [m]')
+# ============================================================
+# CROSS-RANGE ZERO PADDING
+# ============================================================
 
-plt.show()
-
-#Zeropad cross-range
 if cross_range_padding > 1:
-    zpad = int((cross_range_padding - 1)*data.shape[0])
-    data = np.pad(data, ((zpad//2, zpad//2), (0, 0)), 'constant')
+    zpad = int((cross_range_padding - 1) * data.shape[0])
+    data = np.pad(data, ((zpad // 2, zpad // 2), (0, 0)), mode='constant')
 
-kx = np.linspace(-np.pi/delta_crange, np.pi/delta_crange, len(data))
-kr = np.linspace(((4*np.pi/c)*(fc - bw/2)), ((4*np.pi/c)*(fc + bw/2)), sweep_samples);
+# Azimuth window before along-track FFT
+ws = window_slow(data.shape[0])[:, None]
+data = data * ws
 
-#along the track fft
-cfft = np.fft.fftshift(np.fft.fft(data, axis=0), 0)
+# ============================================================
+# OMEGA-K SETUP
+# ============================================================
 
-if 0:
-    plt.figure()
-    plt.title('Along track FFT phase')
-    plt.imshow(np.angle(cfft), aspect='auto', extent=[kr[0], kr[-1], kx[0], kx[-1]])
-    plt.figure()
-    plt.title('Along track FFT magnitude')
-    plt.imshow(np.abs(cfft), aspect='auto', extent=[kr[0], kr[-1], kx[0], kx[-1]])
+# along-track spatial frequency
+kx = np.linspace(-np.pi / delta_crange, np.pi / delta_crange, data.shape[0])
 
-#matched filter
-if rs != 0:
-    phi_mf = np.zeros(cfft.shape)
-    for ii in range(cfft.shape[1]):
-        for jj in range(cfft.shape[0]):
-            phi_mf = rs*(kr[ii]**2-kx[jj]**2 )**0.5
+# RF wavenumber axis across sweep bandwidth
+kr = np.linspace((4.0 * np.pi / c) * (fc - bw / 2.0),
+                 (4.0 * np.pi / c) * (fc + bw / 2.0),
+                 sweep_samples)
 
-    smf = np.exp(1j*phi_mf)
-    cfft  = cfft*smf
+# Along-track FFT
+cfft = np.fft.fftshift(np.fft.fft(data, axis=0), axes=0)
 
-#ky0 = (-1*(kr[0]**2 - kx[0]**2))**0.5 # kr - kx is negative gives nan
-ky0 = (kr[0]**2 - kx[0]**2)**0.5
+# Optional leakage suppression near zero-range-like region
+if remove_leakage_bins > 0:
+    cfft[:, :remove_leakage_bins] = 0
+
+# ============================================================
+# STOLT INTERPOLATION
+# ============================================================
+
 kr_delta = kr[1] - kr[0]
+
+# valid starting ky from worst-case kx
+kx_max = np.max(np.abs(kx))
+ky0 = np.sqrt(max(kr[0] ** 2 - kx_max ** 2, 1e-12))
 ky_delta = ky_delta_spacing * kr_delta
 ky_even = np.arange(ky0, kr[-1], ky_delta)
 
 st = np.zeros((cfft.shape[0], len(ky_even)), dtype=np.complex128)
 
-print("entering slot interpolation")
-#Stolt interpolation
+print("Entering Stolt interpolation")
+
 for i in range(len(kx)):
-    ky = (kr**2 - kx[i]**2)**0.5
-    ci = interp.interp1d(ky, cfft[i], fill_value=0, bounds_error=False)
-    #ci = lanczos_interp1d(ky, cfft[i])
-    st[i,:] = ci(ky_even)
-print("finished slot interpolation")
+    val = kr**2 - kx[i]**2
+    valid = val > 0
+
+    if np.count_nonzero(valid) < 4:
+        continue
+
+    ky = np.sqrt(val[valid])
+    row = cfft[i, valid]
+
+    # keep monotonic unique ky
+    ky_unique, unique_idx = np.unique(ky, return_index=True)
+    row_unique = row[unique_idx]
+
+    if len(ky_unique) < 4:
+        continue
+
+    ci = interp.interp1d(
+        ky_unique,
+        row_unique,
+        kind=interp_kind,
+        bounds_error=False,
+        fill_value=0.0
+    )
+
+    st[i, :] = ci(ky_even)
+
+print("Finished Stolt interpolation")
+
+# Optional 2D window after remap
+if 1:
+    wx = np.hanning(st.shape[0])
+    wy = np.hanning(st.shape[1])
+    st = st * np.sqrt(np.outer(wx, wy))
+
+# ============================================================
+# IMAGE FORMATION
+# ============================================================
+
+# optional smooth upsampling in image domain
+if cross_range_padding > 1:
+    pass
+
+img = np.fft.ifft2(st)
+img = np.fft.fftshift(img, axes=0)
+
+# split halves
+mid = img.shape[0] // 2
+upper = img[:mid, :]   # currently top (far part)
+lower = img[mid:, :]   # currently bottom (near part)
+
+# reorder: near first, then far
+img_combined = np.vstack((lower, upper))
+
+# display extents
+range1 = c * (fs / 2.0) * tsweep / (2.0 * bw)
+crange = delta_crange * img_combined.shape[0]
+
+# convert to dB
+img_db = 20 * np.log10(np.abs(img_combined) + 1e-12)
+
+# plot
+plt.figure(figsize=(9,7))
+plt.title("SAR Image (Combined Correct Order)")
+plt.imshow(
+    img_db,
+    aspect='auto',
+    interpolation='none',
+    extent=[0, range1, -crange/2.0, crange/2.0],
+    origin='lower'
+)
+m = np.max(img_db)
+plt.clim(m - dynamic_range, m)
+plt.colorbar(label='dB')
+plt.xlabel("Range [m]")
+plt.ylabel("Cross-range [m]")
+plt.tight_layout()
+plt.show()
+
+# ============================================================
+# OPTIONAL DEBUG PLOTS
+# ============================================================
+
 if 0:
     plt.figure()
-    plt.title('Stolt interpolation phase')
-    plt.imshow(np.angle(st), aspect='auto', extent=[ky_even[0], ky_even[-1], kx[0], kx[-1]])
+    plt.title("Along-track FFT magnitude")
+    plt.imshow(np.abs(cfft), aspect='auto', interpolation='none',
+               extent=[kr[0], kr[-1], kx[0], kx[-1]])
+    plt.xlabel("kr")
+    plt.ylabel("kx")
+    plt.show()
+
+if 0:
     plt.figure()
-    plt.title('Stolt interpolation magnitude')
-    plt.imshow(np.abs(st), aspect='auto', extent=[ky_even[0], ky_even[-1], kx[0], kx[-1]])
-
-#Window again
-#wx = window(st.shape[0])
-#wy = window(st.shape[1])
-#w = np.sqrt(np.outer(wx, wy))
-#st = st * w
-
-end_time = time.time()
-
-print("calculation time:",end_time-start_time)
-
-#IFFT to generate the image
-st = np.fft.ifft2(st)
-
-st_sum = np.sum(np.abs(st))
-print('Entropy', -np.sum((np.abs(st)/st_sum) * np.log(np.abs(st)/st_sum)))
-
-#Cross-range size of image in meters
-crange = delta_crange*st.shape[0]/interpolate
-max_range = range1 * ky_delta / (2 * kr_delta)
-
-plt.figure()
-plt.title('SAR Image')
-
-st = 20*np.log10(np.abs(st))
-imgplot = plt.imshow(st, aspect='auto', interpolation='none', extent=[0, range1,-crange/2.0,crange/2.0], origin='lower')
-m = np.max(st)
-#Limit the dynamic range to clean the rounding errors
-imgplot.set_clim(m-dynamic_range,m)
-
-plt.show()
+    plt.title("Stolt magnitude")
+    plt.imshow(np.abs(st), aspect='auto', interpolation='none',
+               extent=[ky_even[0], ky_even[-1], kx[0], kx[-1]])
+    plt.xlabel("ky")
+    plt.ylabel("kx")
+    plt.show()

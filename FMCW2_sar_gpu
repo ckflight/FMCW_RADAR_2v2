@@ -1,0 +1,369 @@
+"""
+GPU SAR processor for radar2v2 PRF/burst-mode .bin logs.
+
+KEY FIX vs your previous script:
+  Your acquisition is bursty: 64-128 chirps at ~250-500us spacing (sub-mm of
+  travel between them) followed by a ~32ms SD-write gap (~10cm+ of travel).
+  Resampling that onto one uniform grid at intra-burst spacing meant filling
+  the huge inter-CPI gaps with fabricated np.interp data -- that both wrecked
+  the image and blew up memory (a full-resolution uniform grid across the
+  whole aperture at sub-mm spacing is enormous).
+
+  Fix: the real independent spatial sample is one per CPI, not one per chirp.
+  Coherently average the chirps inside each CPI into a single row, and use
+  the *measured* CPI period (CPI_END_TIMER_US + CARD_WRITE_END_TIMER_US) as
+  the slow-time step. This collapses the aperture to num_CPI rows (small),
+  removes the fabricated-data problem, and is what should actually be Nyquist
+  checked for your antenna beamwidth.
+
+Requires: cupy (matching your CUDA version), e.g.
+  pip install cupy-cuda12x
+"""
+
+import time
+import numpy as np
+import matplotlib.pyplot as plt
+
+try:
+    import cupy as cp
+except ImportError as e:
+    raise SystemExit(
+        "cupy is not installed. Install the build matching your CUDA version, "
+        "e.g.:  pip install cupy-cuda12x   (check `nvidia-smi` for your CUDA version)"
+    ) from e
+
+# ============================================================
+# BIN FILE SETTINGS
+# ============================================================
+BIN_FILE = "fmcw2_bin_files/sar_log4.bin"
+
+USE_SYNC_HEADERS = True
+HEADER_SIZE = 4
+SYNC0, SYNC1, SYNC2, SYNC3 = 0x1C1C, 0xC1C1, 0x9999, 0x00FF
+INFO_SECTOR_SIZE = 512
+
+# ============================================================
+# SD-CARD RECORD CUT SETTINGS
+# ============================================================
+CUT_START_CPI = 100
+CUT_END_CPI = 200
+CUT_START_PERCENT = 0.00
+CUT_END_PERCENT = 0.00
+
+# ============================================================
+# USER PARAMETERS
+# ============================================================
+speed = 0.8                 # platform speed, m/s -- tune this
+
+dynamic_range = 40
+cross_range_padding = 4
+ky_delta_spacing = 1.5
+remove_leakage_bins = 5
+remove_static_clutter = True
+use_rvp = True
+
+c = 299792458.0
+
+# ============================================================
+# HELPERS
+# ============================================================
+def read_u32_be(buf, offset):
+    return ((buf[offset] << 24) | (buf[offset + 1] << 16) |
+            (buf[offset + 2] << 8) | buf[offset + 3])
+
+
+def read_u16_be(buf, offset):
+    return (buf[offset] << 8) | buf[offset + 1]
+
+
+def hilbert_rvp_gpu(x, fs, kr):
+    y = cp.fft.fft(x, axis=-1)
+    y[:, : y.shape[1] // 2 + 1] = 0
+    f = cp.linspace(-fs / 2, fs / 2, y.shape[1])
+    y *= cp.exp(-1j * cp.pi * f ** 2 / kr)
+    return cp.fft.ifft(y, axis=-1)
+
+
+# ============================================================
+# READ BIN HEADER
+# ============================================================
+with open(BIN_FILE, "rb") as f:
+    file_bytes = f.read()
+
+if len(file_bytes) < INFO_SECTOR_SIZE:
+    raise ValueError("File is smaller than 512-byte info sector")
+
+info = file_bytes[:INFO_SECTOR_SIZE]
+idx = 0
+
+RECORD_COUNTER_BIN = read_u32_be(info, idx); idx += 4
+RECORD_TIME = read_u32_be(info, idx); idx += 4
+SWEEP_TIME_US = read_u32_be(info, idx); idx += 4
+SWEEP_DELAY_US = read_u32_be(info, idx); idx += 4
+SWEEP_START_SCALED = read_u32_be(info, idx); idx += 4
+SWEEP_BW_SCALED = read_u32_be(info, idx); idx += 4
+FS_KHZ = read_u32_be(info, idx); idx += 4
+NUMBER_OF_SAMPLES = read_u32_be(info, idx); idx += 4
+
+TX_MODE = info[idx]; idx += 1
+TX_POWER_DBM = info[idx]; idx += 1
+TX_POWER_DBM_VOLTAGE = info[idx]; idx += 1
+
+hz_per_m = read_u32_be(info, idx); idx += 4
+
+DATA_LOG = info[idx]; idx += 1
+USB_DATA_TYPE = info[idx]; idx += 1
+ADC_RESOLUTION = info[idx]; idx += 1
+
+CHIRP_END_TIMER_US = read_u32_be(info, idx); idx += 4
+CPI_END_TIMER_US = read_u32_be(info, idx); idx += 4
+CARD_WRITE_END_TIMER_US = read_u32_be(info, idx); idx += 4
+
+CHIRPS_PER_CPI = read_u16_be(info, idx); idx += 2
+CPI_COUNTER = read_u32_be(info, idx); idx += 4
+
+RECORD_COUNTER_HEADER = CPI_COUNTER * CHIRPS_PER_CPI
+
+SWEEP_TIME = SWEEP_TIME_US / 1e6
+SWEEP_DELAY = SWEEP_DELAY_US / 1e6
+SWEEP_START = SWEEP_START_SCALED * 1e7
+SWEEP_BW = SWEEP_BW_SCALED * 1e6
+SAMPLING_FREQUENCY = FS_KHZ * 1000.0
+
+print("----- HEADER -----")
+print(f"CHIRPS_PER_CPI          : {CHIRPS_PER_CPI}")
+print(f"CPI_COUNTER              : {CPI_COUNTER}")
+print(f"SWEEP_TIME / SWEEP_DELAY : {SWEEP_TIME_US} us / {SWEEP_DELAY_US} us")
+print(f"CPI_END_TIMER_US         : {CPI_END_TIMER_US}")
+print(f"CARD_WRITE_END_TIMER_US  : {CARD_WRITE_END_TIMER_US}")
+print(f"SAMPLING_FREQUENCY       : {SAMPLING_FREQUENCY} Hz")
+print(f"SAMPLES_PER_CHIRP        : {NUMBER_OF_SAMPLES}")
+print(f"SWEEP_BW / SWEEP_START   : {SWEEP_BW/1e6:.2f} MHz / {SWEEP_START/1e6:.2f} MHz")
+print(f"ADC_RESOLUTION           : {ADC_RESOLUTION}")
+
+# ============================================================
+# READ ADC DATA
+# ============================================================
+words_per_chirp = NUMBER_OF_SAMPLES + (HEADER_SIZE if USE_SYNC_HEADERS else 0)
+
+raw_data = file_bytes[INFO_SECTOR_SIZE:]
+data_u16 = np.frombuffer(raw_data, dtype="<u2")
+
+available_chirps = len(data_u16) // words_per_chirp
+available_chirps = min(available_chirps, RECORD_COUNTER_HEADER)
+
+if available_chirps <= 0:
+    raise RuntimeError("No complete chirps available")
+
+full_cpi_count = available_chirps // CHIRPS_PER_CPI
+usable_chirps = full_cpi_count * CHIRPS_PER_CPI
+
+if full_cpi_count <= 0:
+    raise RuntimeError("No complete CPI available")
+
+print(f"available_chirps={available_chirps}  full_cpi_count={full_cpi_count}")
+
+data_u16 = data_u16[: usable_chirps * words_per_chirp]
+chirps_raw = data_u16.reshape(usable_chirps, words_per_chirp)
+
+if USE_SYNC_HEADERS:
+    bad_headers = np.where(
+        (chirps_raw[:, 0] != SYNC0) | (chirps_raw[:, 1] != SYNC1) |
+        (chirps_raw[:, 2] != SYNC2) | (chirps_raw[:, 3] != SYNC3)
+    )[0]
+    print(f"bad headers: {len(bad_headers)}")
+    if len(bad_headers) > 0:
+        print("first bad header indices:", bad_headers[:20])
+    chirps = chirps_raw[:, HEADER_SIZE:]
+else:
+    chirps = chirps_raw
+
+ADC_MASK = (1 << ADC_RESOLUTION) - 1
+chirps = chirps & ADC_MASK
+chirps = chirps.astype(np.float32)
+chirps = (chirps / (2 ** ADC_RESOLUTION)) * 3.3
+
+del chirps_raw, data_u16, raw_data, file_bytes
+
+# ============================================================
+# CUT CPIs
+# ============================================================
+chirps_cpi = chirps.reshape(full_cpi_count, CHIRPS_PER_CPI, NUMBER_OF_SAMPLES)
+del chirps
+
+start_cpi = CUT_START_CPI
+end_cpi = full_cpi_count - CUT_END_CPI
+if end_cpi <= start_cpi:
+    raise RuntimeError("Invalid CUT_START_CPI / CUT_END_CPI")
+chirps_cpi = chirps_cpi[start_cpi:end_cpi]
+
+p_start = int(chirps_cpi.shape[0] * CUT_START_PERCENT)
+p_end = chirps_cpi.shape[0] - int(chirps_cpi.shape[0] * CUT_END_PERCENT)
+if p_end <= p_start:
+    raise RuntimeError("Invalid CUT_START_PERCENT / CUT_END_PERCENT")
+chirps_cpi = chirps_cpi[p_start:p_end]
+
+num_cpi_used = chirps_cpi.shape[0]
+print(f"Using {num_cpi_used} CPIs")
+
+# ============================================================
+# COHERENT PER-CPI AVERAGE  <<< the key fix >>>
+# The 64/128 chirps inside a CPI sit at ~sub-mm spacing -- essentially the
+# same physical position for imaging purposes. Collapse each CPI to ONE
+# slow-time row. This is what removes the fabricated-interpolation problem
+# and the memory blowup: aperture size goes from
+# (num_CPI * chirps_per_CPI) rows down to just num_CPI rows.
+# ============================================================
+data1 = chirps_cpi.mean(axis=1)  # -> [num_cpi_used, NUMBER_OF_SAMPLES]
+del chirps_cpi
+
+# ============================================================
+# TRUE CPI SPACING -> cross-range sample spacing
+# ============================================================
+chirp_period = (SWEEP_TIME_US + SWEEP_DELAY_US) * 1e-6
+
+if (CPI_END_TIMER_US + CARD_WRITE_END_TIMER_US) > 0:
+    cpi_period = (CPI_END_TIMER_US + CARD_WRITE_END_TIMER_US) * 1e-6
+else:
+    cpi_period = (
+        CHIRPS_PER_CPI * (SWEEP_TIME_US + SWEEP_DELAY_US) + CARD_WRITE_END_TIMER_US
+    ) * 1e-6
+
+delta_crange = speed * cpi_period
+
+print(f"chirp_period = {chirp_period*1e6:.1f} us")
+print(f"cpi_period   = {cpi_period*1e3:.3f} ms")
+print(f"delta_crange = {delta_crange*1000:.2f} mm per CPI")
+
+# ============================================================
+# MOVE TO GPU
+# ============================================================
+t_gpu_start = time.time()
+data = cp.asarray(data1, dtype=cp.float64)
+del data1
+
+fs = SAMPLING_FREQUENCY
+tsweep = SWEEP_TIME
+bw = SWEEP_BW
+fc = SWEEP_START + bw / 2.0
+sweep_samples = data.shape[1]
+lam = c / fc
+
+print(f"Cross-range delta {delta_crange:.6f} m, {delta_crange/lam:.4f} lambda")
+print(f"Carrier {fc/1e9:.3f} GHz")
+
+# ============================================================
+# PREPROCESSING (GPU)
+# ============================================================
+data = data - cp.mean(data, axis=1, keepdims=True)
+
+wf = cp.hanning(sweep_samples)
+data = data * wf
+
+if use_rvp:
+    data = hilbert_rvp_gpu(data, fs, bw / tsweep)
+
+if remove_static_clutter:
+    data = data - cp.mean(data, axis=0, keepdims=True)
+
+# ============================================================
+# CROSS-RANGE ZERO PADDING
+# ============================================================
+if cross_range_padding > 1:
+    zpad = int((cross_range_padding - 1) * data.shape[0])
+    data = cp.pad(data, ((zpad // 2, zpad // 2), (0, 0)), mode="constant")
+
+ws = cp.hanning(data.shape[0])[:, None]
+data = data * ws
+
+# ============================================================
+# OMEGA-K SETUP (GPU)
+# ============================================================
+kx = cp.linspace(-cp.pi / delta_crange, cp.pi / delta_crange, data.shape[0])
+kr = cp.linspace(
+    (4.0 * cp.pi / c) * (fc - bw / 2.0),
+    (4.0 * cp.pi / c) * (fc + bw / 2.0),
+    sweep_samples,
+)
+
+cfft = cp.fft.fftshift(cp.fft.fft(data, axis=0), axes=0)
+
+if remove_leakage_bins > 0:
+    cfft[:, :remove_leakage_bins] = 0
+
+# ============================================================
+# STOLT INTERPOLATION (GPU, linear via cp.interp)
+# Looped per along-track row (ragged valid-region per row), but each
+# iteration is now a cheap GPU op on a small array -- this is fast and
+# has none of the memory blowup of the old CPU per-column scipy cubic
+# interp1d approach. If you need cubic quality later this is the spot to
+# swap in a batched cubic implementation.
+# ============================================================
+kr_delta = kr[1] - kr[0]
+kx_max = cp.max(cp.abs(kx))
+ky0 = cp.sqrt(cp.maximum(kr[0] ** 2 - kx_max ** 2, 1e-12))
+ky_delta = ky_delta_spacing * kr_delta
+ky_even = cp.arange(float(ky0), float(kr[-1]), float(ky_delta))
+
+print(f"Entering GPU Stolt interpolation: {cfft.shape[0]} rows x {len(ky_even)} ky bins")
+t0 = time.time()
+
+val = kr[None, :] ** 2 - kx[:, None] ** 2          # [n_kx, n_kr]
+valid = val > 0
+ky_full = cp.sqrt(cp.where(valid, val, 0.0))        # non-decreasing per row
+
+st = cp.zeros((cfft.shape[0], len(ky_even)), dtype=cp.complex128)
+
+for i in range(data.shape[0]):
+    v = valid[i]
+    if int(cp.count_nonzero(v)) < 4:
+        continue
+    ky_row = ky_full[i][v]
+    row = cfft[i][v]
+    real_i = cp.interp(ky_even, ky_row, row.real, left=0.0, right=0.0)
+    imag_i = cp.interp(ky_even, ky_row, row.imag, left=0.0, right=0.0)
+    st[i, :] = real_i + 1j * imag_i
+
+cp.cuda.Stream.null.synchronize()
+print(f"Stolt interpolation done in {time.time()-t0:.2f}s")
+
+wx = cp.hanning(st.shape[0])
+wy = cp.hanning(st.shape[1])
+st = st * cp.sqrt(cp.outer(wx, wy))
+
+# ============================================================
+# IMAGE FORMATION (GPU)
+# ============================================================
+img = cp.fft.ifft2(st)
+img = cp.fft.fftshift(img, axes=0)
+
+mid = img.shape[0] // 2
+img_combined = cp.vstack((img[mid:, :], img[:mid, :]))
+
+range1 = c * (fs / 2.0) * tsweep / (2.0 * bw)
+crange = delta_crange * img_combined.shape[0]
+
+img_db = 20 * cp.log10(cp.abs(img_combined) + 1e-12)
+img_db_cpu = cp.asnumpy(img_db)
+
+print(f"GPU pipeline total time: {time.time()-t_gpu_start:.2f}s")
+
+# ============================================================
+# PLOT
+# ============================================================
+plt.figure(figsize=(9, 7))
+plt.title("SAR Image (GPU, CPI-averaged aperture)")
+plt.imshow(
+    img_db_cpu,
+    aspect="auto",
+    interpolation="none",
+    extent=[0, range1, -crange / 2.0, crange / 2.0],
+    origin="lower",
+)
+m = np.max(img_db_cpu)
+plt.clim(m - dynamic_range, m)
+plt.colorbar(label="dB")
+plt.xlabel("Range [m]")
+plt.ylabel("Cross-range [m]")
+plt.tight_layout()
+plt.show()
