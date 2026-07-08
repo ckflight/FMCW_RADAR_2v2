@@ -17,7 +17,7 @@ CHIRP_STEP = 8
 if OPERATING_SYSTEM == 1:
     BIN_FILE = "Radar_Records/data_record.bin"
     #BIN_FILE = "/home/ck/Desktop/flight_log.bin"
-    #BIN_FILE = "fmcw2_bin_files/hwfir_terrace.bin"
+    BIN_FILE = "fmcw2_bin_files/sar_log5.bin"
 
 else:
     BIN_FILE = r"C:\Users\CK\Desktop\flight_log.bin"
@@ -46,10 +46,6 @@ if len(file_bytes) < INFO_SECTOR_SIZE:
 
 info = file_bytes[:INFO_SECTOR_SIZE]
 
-
-# -----------------------------
-# Decode info sector
-# -----------------------------
 idx = 0
 
 RECORD_COUNTER     = read_u32_be(info, idx); idx += 4
@@ -78,6 +74,85 @@ CARD_WRITE_END_TIMER_US = read_u32_be(info, idx); idx += 4
 CHIRPS_PER_CPI = read_u16_be(info, idx); idx += 2
 CPI_COUNTER    = read_u32_be(info, idx); idx += 4
 
+
+if ADC_BITS not in (10, 12, 14, 16):
+    raise ValueError(f"Unsupported ADC_BITS = {ADC_BITS}")
+
+if SAMPLES_PER_CHIRP <= 0:
+    raise ValueError("SAMPLES_PER_CHIRP is zero")
+
+num_chirps_expected = CPI_COUNTER * CHIRPS_PER_CPI
+
+if num_chirps_expected <= 0:
+    raise ValueError("num_chirps_expected is zero")
+
+
+FS = FS_KHZ * 1000
+SWEEP_TIME = SWEEP_TIME_US * 1e-6
+SWEEP_GAP = SWEEP_GAP_US * 1e-6
+SWEEP_START = SWEEP_START_SCALED * 1e7
+SWEEP_BW = SWEEP_BW_SCALED * 1e6
+
+CONFIGURED_PRF_HZ = 0.0
+if (SWEEP_TIME_US + SWEEP_GAP_US) > 0:
+    CONFIGURED_PRF_HZ = 1e6 / (SWEEP_TIME_US + SWEEP_GAP_US)
+
+MEASURED_CHIRP_RATE_HZ = 0.0
+if CHIRP_END_TIMER_US > 0:
+    MEASURED_CHIRP_RATE_HZ = 1e6 / CHIRP_END_TIMER_US
+
+CPI_RATE_HZ = 0.0
+if (CPI_END_TIMER_US + CARD_WRITE_END_TIMER_US) > 0:
+    CPI_RATE_HZ = 1e6 / (CPI_END_TIMER_US + CARD_WRITE_END_TIMER_US)
+
+
+BYTES_PER_SAMPLE = 2
+
+if USE_SYNC_HEADERS:
+    words_per_chirp = SAMPLES_PER_CHIRP + HEADER_SIZE
+else:
+    words_per_chirp = SAMPLES_PER_CHIRP
+
+BYTES_PER_CHIRP = words_per_chirp * BYTES_PER_SAMPLE
+BYTES_PER_CPI = CHIRPS_PER_CPI * BYTES_PER_CHIRP
+
+CONFIGURED_DATA_RATE_MBPS = (BYTES_PER_CHIRP * CONFIGURED_PRF_HZ) / 1e6
+
+CARD_WRITE_SPEED_MBPS = 0.0
+if CARD_WRITE_END_TIMER_US > 0:
+    CARD_WRITE_SPEED_MBPS = BYTES_PER_CPI / (CARD_WRITE_END_TIMER_US / 1e6) / 1e6
+
+
+print("\n----- SYSTEM -----")
+print(f"FS                  : {FS/1e6:.2f} MHz")
+print(f"SAMPLES_PER_CHIRP   : {SAMPLES_PER_CHIRP}")
+print(f"HEADER_SIZE         : {HEADER_SIZE if USE_SYNC_HEADERS else 0} words")
+print(f"HZ_PER_M            : {HZ_PER_M}")
+print(f"ADC_BITS            : {ADC_BITS}")
+print(f"TX_POWER            : {TX_POWER_DBM} dBm")
+print(f"TX_VOLT             : {TX_POWER_DBM_VOLT}")
+print(f"SWEEP_START         : {SWEEP_START/1e6:.2f} MHz")
+print(f"SWEEP_BW            : {SWEEP_BW/1e6:.2f} MHz")
+
+print("\n----- TIMING -----")
+print(f"SWEEP_TIME          : {SWEEP_TIME_US} us")
+print(f"SWEEP_GAP           : {SWEEP_GAP_US} us")
+print(f"CONFIGURED_PRF      : {CONFIGURED_PRF_HZ:.2f} Hz")
+print(f"MEASURED_CHIRP_RATE : {MEASURED_CHIRP_RATE_HZ:.2f} Hz")
+
+print("\n----- CPI -----")
+print(f"CHIRPS_PER_CPI      : {CHIRPS_PER_CPI}")
+print(f"CPI_RATE            : {CPI_RATE_HZ:.2f} Hz")
+print(f"CPI_COUNTER         : {CPI_COUNTER}")
+print(f"NUM_CHIRPS          : {num_chirps_expected}")
+
+print("\n----- DATA -----")
+print(f"BYTES_PER_CHIRP     : {BYTES_PER_CHIRP}")
+print(f"BYTES_PER_CPI       : {BYTES_PER_CPI}")
+print(f"DATA_RATE           : {CONFIGURED_DATA_RATE_MBPS:.2f} MB/s")
+
+print("\n----- SD WRITE -----")
+print(f"WRITE_SPEED         : {CARD_WRITE_SPEED_MBPS:.2f} MB/s")
 
 # -----------------------------
 # Validate
@@ -115,14 +190,16 @@ else:
     words_per_chirp = SAMPLES_PER_CHIRP
 
 bytes_to_read = expected_chirps * words_per_chirp * 2
+print(f"Bytes to read: {bytes_to_read}")
 
 raw_data = file_bytes[
     INFO_SECTOR_SIZE :
     INFO_SECTOR_SIZE + bytes_to_read
 ]
+print(f"Raw data length: {len(raw_data)}")
 
 adc_u16 = np.frombuffer(raw_data, dtype="<u2")
-
+print(f"Raw data u16 length: {len(adc_u16)}")
 
 # -----------------------------
 # Extract chirps with fixed stride

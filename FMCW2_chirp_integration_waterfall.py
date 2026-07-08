@@ -20,13 +20,13 @@ REMOVE_DC = True
 REMOVE_FIRST_N_BINS = 0
 
 # Set noise floor threshold, higher value more detail closer to noise floor
-WATERFALL_NF_DB = 30
-DOPPLER_NF_DB = 30
+WATERFALL_NF_DB = 40
+DOPPLER_NF_DB = 45
 
 if OPERATING_SYSTEM == 1:
-    BIN_FILE = "Radar_Records/data_record.bin"
+    #BIN_FILE = "Radar_Records/data_record.bin"
     #BIN_FILE = "/home/ck/Desktop/horn_200mhz_5G95_1000us_32_cleanplot.bin"
-    #BIN_FILE = "fmcw2_bin_files/hwfir_terrace.bin"
+    BIN_FILE = "fmcw2_bin_files/road_log5_resized.bin"
 
 elif OPERATING_SYSTEM == 2:
     BIN_FILE = r"C:\Users\CK\Desktop\flight_log.bin"
@@ -166,29 +166,65 @@ print(f"DATA_RATE           : {CONFIGURED_DATA_RATE_MBPS:.2f} MB/s")
 print("\n----- SD WRITE -----")
 print(f"WRITE_SPEED         : {CARD_WRITE_SPEED_MBPS:.2f} MB/s")
 
+# -----------------------------
+# Validate
+# -----------------------------
+if ADC_BITS not in (10, 12, 14, 16):
+    raise ValueError(f"Unsupported ADC_BITS = {ADC_BITS}")
+
+if SAMPLES_PER_CHIRP <= 0:
+    raise ValueError("SAMPLES_PER_CHIRP is zero")
+
+expected_chirps = CPI_COUNTER * CHIRPS_PER_CPI
+
+if expected_chirps <= 0:
+    raise ValueError("expected_chirps is zero")
+
 
 # -----------------------------
-# Read ADC data
+# Print info
 # -----------------------------
-record_size = num_chirps_expected * BYTES_PER_CHIRP
+print("\n----- INFO -----")
+print(f"FS                : {FS_KHZ / 1000:.3f} MHz")
+print(f"ADC_BITS          : {ADC_BITS}")
+print(f"SAMPLES_PER_CHIRP : {SAMPLES_PER_CHIRP}")
+print(f"CHIRPS_PER_CPI    : {CHIRPS_PER_CPI}")
+print(f"CPI_COUNTER       : {CPI_COUNTER}")
+print(f"EXPECTED CHIRPS   : {expected_chirps}")
+
+# -----------------------------
+# Read only current record
+# -----------------------------
+if USE_SYNC_HEADERS:
+    words_per_chirp = SAMPLES_PER_CHIRP + HEADER_SIZE
+else:
+    words_per_chirp = SAMPLES_PER_CHIRP
+
+bytes_to_read = expected_chirps * words_per_chirp * 2
+print(f"Bytes to read: {bytes_to_read}")
 
 raw_data = file_bytes[
     INFO_SECTOR_SIZE :
-    INFO_SECTOR_SIZE + record_size
+    INFO_SECTOR_SIZE + bytes_to_read
 ]
+print(f"Raw data length: {len(raw_data)}")
 
-data_u16 = np.frombuffer(raw_data, dtype="<u2")
+adc_u16 = np.frombuffer(raw_data, dtype="<u2")
+print(f"Raw data u16 length: {len(adc_u16)}")
 
-available_chirps = len(data_u16) // words_per_chirp
-available_chirps = min(available_chirps, num_chirps_expected)
+# -----------------------------
+# Extract chirps with fixed stride
+# -----------------------------
+available_chirps = len(adc_u16) // words_per_chirp
+available_chirps = min(available_chirps, expected_chirps)
 
 if available_chirps <= 0:
     raise RuntimeError("No complete chirps available")
 
-unused_words = len(data_u16) - available_chirps * words_per_chirp
+unused_words = len(adc_u16) - available_chirps * words_per_chirp
 
-data_u16 = data_u16[:available_chirps * words_per_chirp]
-chirps_raw = data_u16.reshape(available_chirps, words_per_chirp)
+adc_u16 = adc_u16[:available_chirps * words_per_chirp]
+chirps_raw = adc_u16.reshape(available_chirps, words_per_chirp)
 
 if USE_SYNC_HEADERS:
     bad_headers = np.where(
@@ -204,6 +240,7 @@ if USE_SYNC_HEADERS:
     print(f"LOADED CHIRPS      : {len(chirps)}")
     print(f"BAD HEADERS        : {len(bad_headers)}")
     print(f"UNUSED END WORDS   : {unused_words}")
+    print(f"VALID CPI          : {len(chirps) // CHIRPS_PER_CPI}")
 
     if len(bad_headers) > 0:
         print("First bad header indices:", bad_headers[:20])
@@ -214,11 +251,13 @@ else:
     print("\n----- NO SYNC -----")
     print(f"LOADED CHIRPS      : {len(chirps)}")
     print(f"UNUSED END WORDS   : {unused_words}")
+    print(f"VALID CPI          : {len(chirps) // CHIRPS_PER_CPI}")
 
 num_chirps = len(chirps)
 
 if num_chirps == 0:
     raise RuntimeError("No valid chirps found")
+
 
 FULL_CPI_COUNT = num_chirps // CHIRPS_PER_CPI
 DISPLAY_CPI_COUNT = FULL_CPI_COUNT // CHIRP_STEP

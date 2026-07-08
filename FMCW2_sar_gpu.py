@@ -45,8 +45,8 @@ INFO_SECTOR_SIZE = 512
 # ============================================================
 # SD-CARD RECORD CUT SETTINGS
 # ============================================================
-CUT_START_CPI = 100
-CUT_END_CPI = 200
+CUT_START_CPI = 0
+CUT_END_CPI = 0
 CUT_START_PERCENT = 0.00
 CUT_END_PERCENT = 0.00
 
@@ -94,101 +94,223 @@ if len(file_bytes) < INFO_SECTOR_SIZE:
     raise ValueError("File is smaller than 512-byte info sector")
 
 info = file_bytes[:INFO_SECTOR_SIZE]
+
 idx = 0
 
-RECORD_COUNTER_BIN = read_u32_be(info, idx); idx += 4
-RECORD_TIME = read_u32_be(info, idx); idx += 4
-SWEEP_TIME_US = read_u32_be(info, idx); idx += 4
-SWEEP_DELAY_US = read_u32_be(info, idx); idx += 4
+RECORD_COUNTER     = read_u32_be(info, idx); idx += 4
+RECORD_TIME        = read_u32_be(info, idx); idx += 4
+SWEEP_TIME_US      = read_u32_be(info, idx); idx += 4
+SWEEP_GAP_US       = read_u32_be(info, idx); idx += 4
 SWEEP_START_SCALED = read_u32_be(info, idx); idx += 4
-SWEEP_BW_SCALED = read_u32_be(info, idx); idx += 4
-FS_KHZ = read_u32_be(info, idx); idx += 4
-NUMBER_OF_SAMPLES = read_u32_be(info, idx); idx += 4
+SWEEP_BW_SCALED    = read_u32_be(info, idx); idx += 4
+FS_KHZ             = read_u32_be(info, idx); idx += 4
+SAMPLES_PER_CHIRP  = read_u32_be(info, idx); idx += 4
 
-TX_MODE = info[idx]; idx += 1
-TX_POWER_DBM = info[idx]; idx += 1
-TX_POWER_DBM_VOLTAGE = info[idx]; idx += 1
+TX_MODE            = info[idx]; idx += 1
+TX_POWER_DBM       = info[idx]; idx += 1
+TX_POWER_DBM_VOLT  = info[idx]; idx += 1
 
-hz_per_m = read_u32_be(info, idx); idx += 4
+HZ_PER_M           = read_u32_be(info, idx); idx += 4
 
-DATA_LOG = info[idx]; idx += 1
-USB_DATA_TYPE = info[idx]; idx += 1
-ADC_RESOLUTION = info[idx]; idx += 1
+DATA_LOG           = info[idx]; idx += 1
+USB_DATA_TYPE      = info[idx]; idx += 1
+ADC_BITS           = info[idx]; idx += 1
 
-CHIRP_END_TIMER_US = read_u32_be(info, idx); idx += 4
-CPI_END_TIMER_US = read_u32_be(info, idx); idx += 4
+CHIRP_END_TIMER_US      = read_u32_be(info, idx); idx += 4
+CPI_END_TIMER_US        = read_u32_be(info, idx); idx += 4
 CARD_WRITE_END_TIMER_US = read_u32_be(info, idx); idx += 4
 
 CHIRPS_PER_CPI = read_u16_be(info, idx); idx += 2
-CPI_COUNTER = read_u32_be(info, idx); idx += 4
+CPI_COUNTER    = read_u32_be(info, idx); idx += 4
 
-RECORD_COUNTER_HEADER = CPI_COUNTER * CHIRPS_PER_CPI
 
-SWEEP_TIME = SWEEP_TIME_US / 1e6
-SWEEP_DELAY = SWEEP_DELAY_US / 1e6
+if ADC_BITS not in (10, 12, 14, 16):
+    raise ValueError(f"Unsupported ADC_BITS = {ADC_BITS}")
+
+if SAMPLES_PER_CHIRP <= 0:
+    raise ValueError("SAMPLES_PER_CHIRP is zero")
+
+num_chirps_expected = CPI_COUNTER * CHIRPS_PER_CPI
+
+if num_chirps_expected <= 0:
+    raise ValueError("num_chirps_expected is zero")
+
+
+FS = FS_KHZ * 1000
+SWEEP_TIME = SWEEP_TIME_US * 1e-6
+SWEEP_GAP = SWEEP_GAP_US * 1e-6
 SWEEP_START = SWEEP_START_SCALED * 1e7
 SWEEP_BW = SWEEP_BW_SCALED * 1e6
-SAMPLING_FREQUENCY = FS_KHZ * 1000.0
 
-print("----- HEADER -----")
-print(f"CHIRPS_PER_CPI          : {CHIRPS_PER_CPI}")
-print(f"CPI_COUNTER              : {CPI_COUNTER}")
-print(f"SWEEP_TIME / SWEEP_DELAY : {SWEEP_TIME_US} us / {SWEEP_DELAY_US} us")
-print(f"CPI_END_TIMER_US         : {CPI_END_TIMER_US}")
-print(f"CARD_WRITE_END_TIMER_US  : {CARD_WRITE_END_TIMER_US}")
-print(f"SAMPLING_FREQUENCY       : {SAMPLING_FREQUENCY} Hz")
-print(f"SAMPLES_PER_CHIRP        : {NUMBER_OF_SAMPLES}")
-print(f"SWEEP_BW / SWEEP_START   : {SWEEP_BW/1e6:.2f} MHz / {SWEEP_START/1e6:.2f} MHz")
-print(f"ADC_RESOLUTION           : {ADC_RESOLUTION}")
+CONFIGURED_PRF_HZ = 0.0
+if (SWEEP_TIME_US + SWEEP_GAP_US) > 0:
+    CONFIGURED_PRF_HZ = 1e6 / (SWEEP_TIME_US + SWEEP_GAP_US)
 
-# ============================================================
-# READ ADC DATA
-# ============================================================
-words_per_chirp = NUMBER_OF_SAMPLES + (HEADER_SIZE if USE_SYNC_HEADERS else 0)
+MEASURED_CHIRP_RATE_HZ = 0.0
+if CHIRP_END_TIMER_US > 0:
+    MEASURED_CHIRP_RATE_HZ = 1e6 / CHIRP_END_TIMER_US
 
-raw_data = file_bytes[INFO_SECTOR_SIZE:]
-data_u16 = np.frombuffer(raw_data, dtype="<u2")
+CPI_RATE_HZ = 0.0
+if (CPI_END_TIMER_US + CARD_WRITE_END_TIMER_US) > 0:
+    CPI_RATE_HZ = 1e6 / (CPI_END_TIMER_US + CARD_WRITE_END_TIMER_US)
 
-available_chirps = len(data_u16) // words_per_chirp
-available_chirps = min(available_chirps, RECORD_COUNTER_HEADER)
+
+BYTES_PER_SAMPLE = 2
+
+if USE_SYNC_HEADERS:
+    words_per_chirp = SAMPLES_PER_CHIRP + HEADER_SIZE
+else:
+    words_per_chirp = SAMPLES_PER_CHIRP
+
+BYTES_PER_CHIRP = words_per_chirp * BYTES_PER_SAMPLE
+BYTES_PER_CPI = CHIRPS_PER_CPI * BYTES_PER_CHIRP
+
+CONFIGURED_DATA_RATE_MBPS = (BYTES_PER_CHIRP * CONFIGURED_PRF_HZ) / 1e6
+
+CARD_WRITE_SPEED_MBPS = 0.0
+if CARD_WRITE_END_TIMER_US > 0:
+    CARD_WRITE_SPEED_MBPS = BYTES_PER_CPI / (CARD_WRITE_END_TIMER_US / 1e6) / 1e6
+
+
+print("\n----- SYSTEM -----")
+print(f"FS                  : {FS/1e6:.2f} MHz")
+print(f"SAMPLES_PER_CHIRP   : {SAMPLES_PER_CHIRP}")
+print(f"HEADER_SIZE         : {HEADER_SIZE if USE_SYNC_HEADERS else 0} words")
+print(f"HZ_PER_M            : {HZ_PER_M}")
+print(f"ADC_BITS            : {ADC_BITS}")
+print(f"TX_POWER            : {TX_POWER_DBM} dBm")
+print(f"TX_VOLT             : {TX_POWER_DBM_VOLT}")
+print(f"SWEEP_START         : {SWEEP_START/1e6:.2f} MHz")
+print(f"SWEEP_BW            : {SWEEP_BW/1e6:.2f} MHz")
+
+print("\n----- TIMING -----")
+print(f"SWEEP_TIME          : {SWEEP_TIME_US} us")
+print(f"SWEEP_GAP           : {SWEEP_GAP_US} us")
+print(f"CONFIGURED_PRF      : {CONFIGURED_PRF_HZ:.2f} Hz")
+print(f"MEASURED_CHIRP_RATE : {MEASURED_CHIRP_RATE_HZ:.2f} Hz")
+
+print("\n----- CPI -----")
+print(f"CHIRPS_PER_CPI      : {CHIRPS_PER_CPI}")
+print(f"CPI_RATE            : {CPI_RATE_HZ:.2f} Hz")
+print(f"CPI_COUNTER         : {CPI_COUNTER}")
+print(f"NUM_CHIRPS          : {num_chirps_expected}")
+
+print("\n----- DATA -----")
+print(f"BYTES_PER_CHIRP     : {BYTES_PER_CHIRP}")
+print(f"BYTES_PER_CPI       : {BYTES_PER_CPI}")
+print(f"DATA_RATE           : {CONFIGURED_DATA_RATE_MBPS:.2f} MB/s")
+
+print("\n----- SD WRITE -----")
+print(f"WRITE_SPEED         : {CARD_WRITE_SPEED_MBPS:.2f} MB/s")
+
+# -----------------------------
+# Validate
+# -----------------------------
+if ADC_BITS not in (10, 12, 14, 16):
+    raise ValueError(f"Unsupported ADC_BITS = {ADC_BITS}")
+
+if SAMPLES_PER_CHIRP <= 0:
+    raise ValueError("SAMPLES_PER_CHIRP is zero")
+
+expected_chirps = CPI_COUNTER * CHIRPS_PER_CPI
+
+if expected_chirps <= 0:
+    raise ValueError("expected_chirps is zero")
+
+
+# -----------------------------
+# Print info
+# -----------------------------
+print("\n----- INFO -----")
+print(f"FS                : {FS_KHZ / 1000:.3f} MHz")
+print(f"ADC_BITS          : {ADC_BITS}")
+print(f"SAMPLES_PER_CHIRP : {SAMPLES_PER_CHIRP}")
+print(f"CHIRPS_PER_CPI    : {CHIRPS_PER_CPI}")
+print(f"CPI_COUNTER       : {CPI_COUNTER}")
+print(f"EXPECTED CHIRPS   : {expected_chirps}")
+
+
+# -----------------------------
+# Read only current record
+# -----------------------------
+if USE_SYNC_HEADERS:
+    words_per_chirp = SAMPLES_PER_CHIRP + HEADER_SIZE
+else:
+    words_per_chirp = SAMPLES_PER_CHIRP
+
+bytes_to_read = expected_chirps * words_per_chirp * 2
+print(f"Bytes to read: {bytes_to_read}")
+
+raw_data = file_bytes[
+    INFO_SECTOR_SIZE :
+    INFO_SECTOR_SIZE + bytes_to_read
+]
+print(f"Raw data length: {len(raw_data)}")
+
+adc_u16 = np.frombuffer(raw_data, dtype="<u2")
+print(f"Raw data u16 length: {len(adc_u16)}")
+
+# -----------------------------
+# Extract chirps with fixed stride
+# -----------------------------
+available_chirps = len(adc_u16) // words_per_chirp
+available_chirps = min(available_chirps, expected_chirps)
 
 if available_chirps <= 0:
     raise RuntimeError("No complete chirps available")
 
+unused_words = len(adc_u16) - available_chirps * words_per_chirp
+
+adc_u16 = adc_u16[:available_chirps * words_per_chirp]
+chirps_raw = adc_u16.reshape(available_chirps, words_per_chirp)
 full_cpi_count = available_chirps // CHIRPS_PER_CPI
-usable_chirps = full_cpi_count * CHIRPS_PER_CPI
-
-if full_cpi_count <= 0:
-    raise RuntimeError("No complete CPI available")
-
-print(f"available_chirps={available_chirps}  full_cpi_count={full_cpi_count}")
-
-data_u16 = data_u16[: usable_chirps * words_per_chirp]
-chirps_raw = data_u16.reshape(usable_chirps, words_per_chirp)
 
 if USE_SYNC_HEADERS:
     bad_headers = np.where(
-        (chirps_raw[:, 0] != SYNC0) | (chirps_raw[:, 1] != SYNC1) |
-        (chirps_raw[:, 2] != SYNC2) | (chirps_raw[:, 3] != SYNC3)
+        (chirps_raw[:, 0] != SYNC0) |
+        (chirps_raw[:, 1] != SYNC1) |
+        (chirps_raw[:, 2] != SYNC2) |
+        (chirps_raw[:, 3] != SYNC3)
     )[0]
-    print(f"bad headers: {len(bad_headers)}")
-    if len(bad_headers) > 0:
-        print("first bad header indices:", bad_headers[:20])
+
     chirps = chirps_raw[:, HEADER_SIZE:]
+
+    print("\n----- SYNC -----")
+    print(f"LOADED CHIRPS      : {len(chirps)}")
+    print(f"BAD HEADERS        : {len(bad_headers)}")
+    print(f"UNUSED END WORDS   : {unused_words}")
+    print(f"VALID CPI          : {len(chirps) // CHIRPS_PER_CPI}")
+
+    if len(bad_headers) > 0:
+        print("First bad header indices:", bad_headers[:20])
+
 else:
     chirps = chirps_raw
 
-ADC_MASK = (1 << ADC_RESOLUTION) - 1
+    print("\n----- NO SYNC -----")
+    print(f"LOADED CHIRPS      : {len(chirps)}")
+    print(f"UNUSED END WORDS   : {unused_words}")
+    print(f"VALID CPI          : {len(chirps) // CHIRPS_PER_CPI}")
+
+num_chirps = len(chirps)
+
+if num_chirps == 0:
+    raise RuntimeError("No valid chirps found")
+
+ADC_MASK = (1 << ADC_BITS) - 1
 chirps = chirps & ADC_MASK
 chirps = chirps.astype(np.float32)
-chirps = (chirps / (2 ** ADC_RESOLUTION)) * 3.3
+chirps = (chirps / (2 ** ADC_BITS)) * 3.3
 
-del chirps_raw, data_u16, raw_data, file_bytes
+del chirps_raw, adc_u16, raw_data, file_bytes
 
 # ============================================================
 # CUT CPIs
 # ============================================================
-chirps_cpi = chirps.reshape(full_cpi_count, CHIRPS_PER_CPI, NUMBER_OF_SAMPLES)
+usable_chirps = full_cpi_count * CHIRPS_PER_CPI
+chirps = chirps[:usable_chirps]
+
+chirps_cpi = chirps.reshape(full_cpi_count, CHIRPS_PER_CPI, SAMPLES_PER_CHIRP)
 del chirps
 
 start_cpi = CUT_START_CPI
@@ -220,13 +342,13 @@ del chirps_cpi
 # ============================================================
 # TRUE CPI SPACING -> cross-range sample spacing
 # ============================================================
-chirp_period = (SWEEP_TIME_US + SWEEP_DELAY_US) * 1e-6
+chirp_period = (SWEEP_TIME_US + SWEEP_GAP_US) * 1e-6
 
 if (CPI_END_TIMER_US + CARD_WRITE_END_TIMER_US) > 0:
     cpi_period = (CPI_END_TIMER_US + CARD_WRITE_END_TIMER_US) * 1e-6
 else:
     cpi_period = (
-        CHIRPS_PER_CPI * (SWEEP_TIME_US + SWEEP_DELAY_US) + CARD_WRITE_END_TIMER_US
+        CHIRPS_PER_CPI * (SWEEP_TIME_US + SWEEP_GAP_US) + CARD_WRITE_END_TIMER_US
     ) * 1e-6
 
 delta_crange = speed * cpi_period
@@ -242,7 +364,7 @@ t_gpu_start = time.time()
 data = cp.asarray(data1, dtype=cp.float64)
 del data1
 
-fs = SAMPLING_FREQUENCY
+fs = FS
 tsweep = SWEEP_TIME
 bw = SWEEP_BW
 fc = SWEEP_START + bw / 2.0
