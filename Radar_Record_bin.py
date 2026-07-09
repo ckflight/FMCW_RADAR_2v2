@@ -138,10 +138,9 @@ else:
         SWEEP_GAP = 1000e-6
 
 
-distance = 1
 hz_per_m = 0
 if SWEEP_BW:
-    hz_per_m = int((2* SWEEP_BW * distance) / (3e8 * SWEEP_TIME))
+    hz_per_m = int((2* SWEEP_BW) / (3e8 * SWEEP_TIME))
 
 
 SWEEP_FREQ          = 1 / (SWEEP_TIME + SWEEP_GAP)
