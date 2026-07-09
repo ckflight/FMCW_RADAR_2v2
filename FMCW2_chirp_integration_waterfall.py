@@ -307,7 +307,7 @@ print(f"MAX_RANGE_DISPLAY   : {MAX_RANGE_DISPLAY:.2f} m")
 
 
 w = np.hanning(SAMPLES_PER_CHIRP)
-cg = np.sum(w) / SAMPLES_PER_CHIRP # coherent gain of the windows the average of it.
+cg = np.sum(w) / SAMPLES_PER_CHIRP # coherent gain of the window the average of it.
 
 # creates 2d pre-allocation buffer for waterfall plot
 waterfall = np.full((DISPLAY_CPI_COUNT, len(range_m)), -160.0, dtype=np.float32)
@@ -371,7 +371,10 @@ for cpi_idx in range(0, FULL_CPI_COUNT, CHIRP_STEP):
     # chirps were centered by -2048, now scale it to -1,1 for 0dbfs reference
     chirps_cpi_fs = chirps_cpi_w / FS_PEAK
 
+    # take fft over each chirp fast time processing
     chirps_fft = np.fft.rfft(chirps_cpi_fs, axis=1)
+
+    # After fft data needs normalisation again which is done for windowed data
     chirps_fft = chirps_fft / (SAMPLES_PER_CHIRP * cg / 2)
 
     chirps_fft[:, :REMOVE_FIRST_N_BINS] = 0.0
@@ -397,11 +400,31 @@ for cpi_idx in range(0, FULL_CPI_COUNT, CHIRP_STEP):
     display_idx = cpi_idx // CHIRP_STEP
     waterfall[display_idx, :] = avg_range_dbfs
 
+    # second fft over columns slow time fft for doppler
     doppler_fft = np.fft.fft(chirps_fft, axis=0)
+    
+    # reorder fft bins over dc zero frequency
     doppler_fft = np.fft.fftshift(doppler_fft, axes=0)
 
     rd_map_dbfs = 20 * np.log10(np.abs(doppler_fft) + 1e-30)
     rd_map_limited = rd_map_dbfs[:, range_mask]
+
+    # noise floor of the 2D range-doppler map
+    rd_noise_mask = (
+        (range_m > NOISE_RANGE_MIN) &
+        (range_m < min(NOISE_RANGE_MAX, MAX_UNAMBIG_RANGE))
+    )
+
+    if np.any(rd_noise_mask):
+        rd_noise_floor_dbfs = np.median(rd_map_dbfs[:, rd_noise_mask])
+    else:
+        rd_noise_floor_dbfs = np.median(rd_map_dbfs[:, 10:])
+
+    print(
+        f"CPI {cpi_idx + 1:4d}/{FULL_CPI_COUNT}: "
+        f"RD map noise floor = {rd_noise_floor_dbfs:.2f} dBFS/bin"
+    )
+
 
     kernel_size = 5
     kernel = np.ones(kernel_size) / kernel_size
