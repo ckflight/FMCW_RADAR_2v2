@@ -26,7 +26,7 @@ DOPPLER_NF_DB = 45
 if OPERATING_SYSTEM == 1:
     #BIN_FILE = "Radar_Records/data_record.bin"
     #BIN_FILE = "/home/ck/Desktop/horn_200mhz_5G95_1000us_32_cleanplot.bin"
-    BIN_FILE = "fmcw2_bin_files/road_log5_resized.bin"
+    BIN_FILE = "fmcw2_bin_files/road_log6_resized.bin"
 
 elif OPERATING_SYSTEM == 2:
     BIN_FILE = r"C:\Users\CK\Desktop\flight_log.bin"
@@ -281,15 +281,23 @@ FS_PEAK = ADC_CENTER
 
 chirps = chirps.astype(np.float32) - ADC_CENTER
 
+# creates freq array with fft bin freq increment 0 2k 4k 6k .... fs/2
 freq_hz = np.fft.rfftfreq(SAMPLES_PER_CHIRP, d=1.0 / FS)
 
+# range_m has range resolution steps.
+# Radar resolution = c / 2B for LFM so 800 MHz makes 18.75cm resolution
+# range_m steps are 18.75cm
 if HZ_PER_M > 0:
     range_m = freq_hz / HZ_PER_M
 else:
     range_m = np.arange(len(freq_hz), dtype=np.float32)
 
+# max value of the range so max range
 MAX_UNAMBIG_RANGE = np.max(range_m)
-MAX_RANGE_DISPLAY = min(MAX_RANGE_DISPLAY, MAX_UNAMBIG_RANGE)
+
+# if user selected value is smaller than max range max display is user range
+# if user writes more than max range then normal max range is displayed.
+MAX_RANGE_DISPLAY = min(MAX_RANGE_DISPLAY, MAX_UNAMBIG_RANGE) 
 
 range_mask = range_m <= MAX_RANGE_DISPLAY
 range_m_limited = range_m[range_mask]
@@ -299,9 +307,9 @@ print(f"MAX_RANGE_DISPLAY   : {MAX_RANGE_DISPLAY:.2f} m")
 
 
 w = np.hanning(SAMPLES_PER_CHIRP)
-cg = np.sum(w) / SAMPLES_PER_CHIRP
+cg = np.sum(w) / SAMPLES_PER_CHIRP # coherent gain of the windows the average of it.
 
-
+# creates 2d pre-allocation buffer for waterfall plot
 waterfall = np.full((DISPLAY_CPI_COUNT, len(range_m)), -160.0, dtype=np.float32)
 
 plt.ion()
@@ -350,12 +358,17 @@ for cpi_idx in range(0, FULL_CPI_COUNT, CHIRP_STEP):
     start = cpi_idx * CHIRPS_PER_CPI
     end = start + CHIRPS_PER_CPI
 
+    # 2D array 128 chirps (rows) with each row has chirp adc samples
     chirps_cpi = chirps[start:end]
 
+    # adc center removes bias but this takes any other dc bias could happen on signal
     if REMOVE_DC:
         chirps_cpi = chirps_cpi - np.mean(chirps_cpi, axis=1, keepdims=True)
 
+    # apply window to the chirps
     chirps_cpi_w = chirps_cpi * w
+
+    # chirps were centered by -2048, now scale it to -1,1 for 0dbfs reference
     chirps_cpi_fs = chirps_cpi_w / FS_PEAK
 
     chirps_fft = np.fft.rfft(chirps_cpi_fs, axis=1)

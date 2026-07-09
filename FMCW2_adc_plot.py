@@ -17,7 +17,7 @@ CHIRP_STEP = 8
 if OPERATING_SYSTEM == 1:
     BIN_FILE = "Radar_Records/data_record.bin"
     #BIN_FILE = "/home/ck/Desktop/flight_log.bin"
-    BIN_FILE = "fmcw2_bin_files/sar_log5.bin"
+    BIN_FILE = "fmcw2_bin_files/sar_log4.bin"
 
 else:
     BIN_FILE = r"C:\Users\CK\Desktop\flight_log.bin"
@@ -213,6 +213,8 @@ if available_chirps <= 0:
 unused_words = len(adc_u16) - available_chirps * words_per_chirp
 
 adc_u16 = adc_u16[:available_chirps * words_per_chirp]
+
+# 2d array is created with number of chirps, number of words per one chirp (number of 16 bit adc data)
 chirps_raw = adc_u16.reshape(available_chirps, words_per_chirp)
 
 if USE_SYNC_HEADERS:
@@ -223,6 +225,7 @@ if USE_SYNC_HEADERS:
         (chirps_raw[:, 3] != SYNC3)
     )[0]
 
+    # take each row and to each row get rid of header from adc data
     chirps = chirps_raw[:, HEADER_SIZE:]
 
     print("\n----- SYNC -----")
@@ -254,9 +257,14 @@ if num_chirps == 0:
 ADC_MASK = (1 << ADC_BITS) - 1
 ADC_CENTER = float(1 << (ADC_BITS - 1))
 
+# adc_raw is 2d array as well
 adc_raw = chirps & ADC_MASK
+
+# convert integer data to float and substract 2^11 to center the data around 0
 adc_centered = adc_raw.astype(np.float32) - ADC_CENTER
 
+# Normalization makes reference full scale as 0 dBfs
+# eps is to prevent log(0) error.
 eps = 1e-12
 adc_norm = adc_centered / ADC_CENTER
 adc_dbfs = 20.0 * np.log10(np.abs(adc_norm) + eps)
@@ -268,15 +276,22 @@ print(f"Centered mean : {adc_centered.mean():.2f}")
 print(f"Peak dBFS     : {adc_dbfs.max():.2f} dBFS")
 
 
+#-----------------------------
+# Window (to see the affect on time domain data before fft)
+#-----------------------------
+window = np.hanning(SAMPLES_PER_CHIRP)
+
 # -----------------------------
 # Plot each chirp
 # -----------------------------
-plt.ion()
+plt.ion() # interactive mode
 fig, ax = plt.subplots(figsize=(10, 6))
 
 for chirp_idx in range(0, num_chirps, CHIRP_STEP):
 
+    # adc_center is 2d data, select entire row whic is each chirp's data.
     y = adc_centered[chirp_idx]
+    y_windowed = y * window
 
     peak = np.max(np.abs(y)) / ADC_CENTER
     peak_dbfs = 20.0 * np.log10(peak + eps)
@@ -285,7 +300,9 @@ for chirp_idx in range(0, num_chirps, CHIRP_STEP):
     chirp_in_cpi = chirp_idx % CHIRPS_PER_CPI
 
     ax.clear()
-    ax.plot(y)
+    ax.plot(y, label = "Raw", alpha=0.6)
+    ax.plot(y_windowed, label = "Windowed (Hanning)", linewidth=2)
+    ax.legend(loc="upper right")
     ax.set_ylim(ymin=-1024,ymax=1024)
 
     ax.set_title(
