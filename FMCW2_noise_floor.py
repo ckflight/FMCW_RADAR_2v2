@@ -18,6 +18,9 @@ FRAME_DELAY = 0.0001
 REMOVE_DC = True
 USE_WINDOW = True
 IGNORE_FIRST_BINS = 10
+
+# Noise floor = 20th percentile of FFT bins is used to print floor level (not mean/median), so strong
+# reflections (e.g. high-amplitude close range returns) don't pull it up.
 NOISE_PERCENTILE = 20
 
 INFO_SECTOR_SIZE = 512
@@ -288,7 +291,6 @@ def calculate_fft_dbfs(samples):
 def estimate_noise_floor_dbfs(mag_dbfs):
     usable = mag_dbfs[IGNORE_FIRST_BINS:]
     return np.percentile(usable, NOISE_PERCENTILE)
-
 
 # -----------------------------
 # Initial FFT
