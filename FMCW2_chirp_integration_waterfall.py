@@ -20,8 +20,8 @@ REMOVE_DC = True
 REMOVE_FIRST_N_BINS = 0
 
 # Set noise floor threshold, higher value more detail closer to noise floor
-WATERFALL_NF_DB = 40
-DOPPLER_NF_DB = 45
+WATERFALL_NF_DB = 50
+DOPPLER_NF_DB = 65
 
 if OPERATING_SYSTEM == 1:
     #BIN_FILE = "Radar_Records/data_record.bin"
@@ -374,7 +374,7 @@ for cpi_idx in range(0, FULL_CPI_COUNT, CHIRP_STEP):
     # take fft over each chirp fast time processing
     chirps_fft = np.fft.rfft(chirps_cpi_fs, axis=1)
 
-    # After fft data needs normalisation again which is done for windowed data
+    # normalized fft result. windowed fft is normalized like this "/ (SAMPLES_PER_CHIRP * cg / 2)"
     chirps_fft = chirps_fft / (SAMPLES_PER_CHIRP * cg / 2)
 
     chirps_fft[:, :REMOVE_FIRST_N_BINS] = 0.0
@@ -402,6 +402,9 @@ for cpi_idx in range(0, FULL_CPI_COUNT, CHIRP_STEP):
 
     # second fft over columns slow time fft for doppler
     doppler_fft = np.fft.fft(chirps_fft, axis=0)
+
+    # normalize range doppler fft (no windows here so just divide number of chirp per cpi)
+    doppler_fft = doppler_fft / CHIRPS_PER_CPI
     
     # reorder fft bins over dc zero frequency
     doppler_fft = np.fft.fftshift(doppler_fft, axes=0)
@@ -410,10 +413,7 @@ for cpi_idx in range(0, FULL_CPI_COUNT, CHIRP_STEP):
     rd_map_limited = rd_map_dbfs[:, range_mask]
 
     # noise floor of the 2D range-doppler map
-    rd_noise_mask = (
-        (range_m > NOISE_RANGE_MIN) &
-        (range_m < min(NOISE_RANGE_MAX, MAX_UNAMBIG_RANGE))
-    )
+    rd_noise_mask = ((range_m > NOISE_RANGE_MIN) & (range_m < min(NOISE_RANGE_MAX, MAX_UNAMBIG_RANGE)))
 
     if np.any(rd_noise_mask):
         rd_noise_floor_dbfs = np.median(rd_map_dbfs[:, rd_noise_mask])
