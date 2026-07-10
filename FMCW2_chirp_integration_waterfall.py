@@ -32,6 +32,8 @@ elif OPERATING_SYSTEM == 2:
     BIN_FILE = r"C:\Users\CK\Desktop\flight_log.bin"
 
 INFO_SECTOR_SIZE  = 512
+
+# if MAX_RANGE_DISPLAY > MAX_RADAR_RANGE this number is ignored else it scales the plot range to user selected range 
 MAX_RANGE_DISPLAY = 50000
 
 NOISE_RANGE_MIN = 0
