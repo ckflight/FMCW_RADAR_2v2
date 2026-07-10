@@ -89,18 +89,6 @@ CHIRPS_PER_CPI = read_u16_be(info, idx); idx += 2
 CPI_COUNTER    = read_u32_be(info, idx); idx += 4
 
 
-if ADC_BITS not in (10, 12, 14, 16):
-    raise ValueError(f"Unsupported ADC_BITS = {ADC_BITS}")
-
-if SAMPLES_PER_CHIRP <= 0:
-    raise ValueError("SAMPLES_PER_CHIRP is zero")
-
-num_chirps_expected = CPI_COUNTER * CHIRPS_PER_CPI
-
-if num_chirps_expected <= 0:
-    raise ValueError("num_chirps_expected is zero")
-
-
 FS = FS_KHZ * 1000
 SWEEP_TIME = SWEEP_TIME_US * 1e-6
 SWEEP_GAP = SWEEP_GAP_US * 1e-6
@@ -136,6 +124,20 @@ CARD_WRITE_SPEED_MBPS = 0.0
 if CARD_WRITE_END_TIMER_US > 0:
     CARD_WRITE_SPEED_MBPS = BYTES_PER_CPI / (CARD_WRITE_END_TIMER_US / 1e6) / 1e6
 
+# -----------------------------
+# Validate
+# -----------------------------
+if ADC_BITS not in (10, 12, 14, 16):
+    raise ValueError(f"Unsupported ADC_BITS = {ADC_BITS}")
+
+if SAMPLES_PER_CHIRP <= 0:
+    raise ValueError("SAMPLES_PER_CHIRP is zero")
+
+expected_chirps = CPI_COUNTER * CHIRPS_PER_CPI
+
+if expected_chirps <= 0:
+    raise ValueError("expected_chirps is zero")
+
 
 print("\n----- SYSTEM -----")
 print(f"FS                  : {FS/1e6:.2f} MHz")
@@ -158,7 +160,7 @@ print("\n----- CPI -----")
 print(f"CHIRPS_PER_CPI      : {CHIRPS_PER_CPI}")
 print(f"CPI_RATE            : {CPI_RATE_HZ:.2f} Hz")
 print(f"CPI_COUNTER         : {CPI_COUNTER}")
-print(f"NUM_CHIRPS          : {num_chirps_expected}")
+print(f"NUM_CHIRPS          : {expected_chirps}")
 
 print("\n----- DATA -----")
 print(f"BYTES_PER_CHIRP     : {BYTES_PER_CHIRP}")
@@ -168,31 +170,6 @@ print(f"DATA_RATE           : {CONFIGURED_DATA_RATE_MBPS:.2f} MB/s")
 print("\n----- SD WRITE -----")
 print(f"WRITE_SPEED         : {CARD_WRITE_SPEED_MBPS:.2f} MB/s")
 
-# -----------------------------
-# Validate
-# -----------------------------
-if ADC_BITS not in (10, 12, 14, 16):
-    raise ValueError(f"Unsupported ADC_BITS = {ADC_BITS}")
-
-if SAMPLES_PER_CHIRP <= 0:
-    raise ValueError("SAMPLES_PER_CHIRP is zero")
-
-expected_chirps = CPI_COUNTER * CHIRPS_PER_CPI
-
-if expected_chirps <= 0:
-    raise ValueError("expected_chirps is zero")
-
-
-# -----------------------------
-# Print info
-# -----------------------------
-print("\n----- INFO -----")
-print(f"FS                : {FS_KHZ / 1000:.3f} MHz")
-print(f"ADC_BITS          : {ADC_BITS}")
-print(f"SAMPLES_PER_CHIRP : {SAMPLES_PER_CHIRP}")
-print(f"CHIRPS_PER_CPI    : {CHIRPS_PER_CPI}")
-print(f"CPI_COUNTER       : {CPI_COUNTER}")
-print(f"EXPECTED CHIRPS   : {expected_chirps}")
 
 # -----------------------------
 # Read only current record
@@ -226,6 +203,8 @@ if available_chirps <= 0:
 unused_words = len(adc_u16) - available_chirps * words_per_chirp
 
 adc_u16 = adc_u16[:available_chirps * words_per_chirp]
+
+# 2d array is created with number of chirps, number of words per one chirp (number of 16 bit adc data)
 chirps_raw = adc_u16.reshape(available_chirps, words_per_chirp)
 
 if USE_SYNC_HEADERS:
@@ -236,6 +215,7 @@ if USE_SYNC_HEADERS:
         (chirps_raw[:, 3] != SYNC3)
     )[0]
 
+    # take each row and to each row get rid of header from adc data
     chirps = chirps_raw[:, HEADER_SIZE:]
 
     print("\n----- SYNC -----")
