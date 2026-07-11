@@ -15,7 +15,7 @@ SYNC3 = 0x00FF
 if OPERATING_SYSTEM == 1:
     #BIN_FILE = "Radar_Records/data_record.bin"
     #BIN_FILE = "/home/ck/Desktop/flight_log.bin"
-    BIN_FILE = "fmcw2_bin_files/road_log5_resized.bin"
+    BIN_FILE = "fmcw2_bin_files/road_log10_resized.bin"
 
 elif OPERATING_SYSTEM == 2:
     BIN_FILE = r"C:\Users\CK\Desktop\flight_log.bin"
@@ -77,18 +77,6 @@ CHIRPS_PER_CPI = read_u16_be(info, idx); idx += 2
 CPI_COUNTER    = read_u32_be(info, idx); idx += 4
 
 
-if ADC_BITS not in (10, 12, 14, 16):
-    raise ValueError(f"Unsupported ADC_BITS = {ADC_BITS}")
-
-if SAMPLES_PER_CHIRP <= 0:
-    raise ValueError("SAMPLES_PER_CHIRP is zero")
-
-num_chirps_expected = CPI_COUNTER * CHIRPS_PER_CPI
-
-if num_chirps_expected <= 0:
-    raise ValueError("num_chirps_expected is zero")
-
-
 FS = FS_KHZ * 1000
 SWEEP_TIME = SWEEP_TIME_US * 1e-6
 SWEEP_GAP = SWEEP_GAP_US * 1e-6
@@ -124,6 +112,20 @@ CARD_WRITE_SPEED_MBPS = 0.0
 if CARD_WRITE_END_TIMER_US > 0:
     CARD_WRITE_SPEED_MBPS = BYTES_PER_CPI / (CARD_WRITE_END_TIMER_US / 1e6) / 1e6
 
+# -----------------------------
+# Validate
+# -----------------------------
+if ADC_BITS not in (10, 12, 14, 16):
+    raise ValueError(f"Unsupported ADC_BITS = {ADC_BITS}")
+
+if SAMPLES_PER_CHIRP <= 0:
+    raise ValueError("SAMPLES_PER_CHIRP is zero")
+
+expected_chirps = CPI_COUNTER * CHIRPS_PER_CPI
+
+if expected_chirps <= 0:
+    raise ValueError("expected_chirps is zero")
+
 
 print("\n----- SYSTEM -----")
 print(f"FS                  : {FS/1e6:.2f} MHz")
@@ -146,7 +148,7 @@ print("\n----- CPI -----")
 print(f"CHIRPS_PER_CPI      : {CHIRPS_PER_CPI}")
 print(f"CPI_RATE            : {CPI_RATE_HZ:.2f} Hz")
 print(f"CPI_COUNTER         : {CPI_COUNTER}")
-print(f"NUM_CHIRPS          : {num_chirps_expected}")
+print(f"NUM_CHIRPS          : {expected_chirps}")
 
 print("\n----- DATA -----")
 print(f"BYTES_PER_CHIRP     : {BYTES_PER_CHIRP}")
@@ -155,32 +157,6 @@ print(f"DATA_RATE           : {CONFIGURED_DATA_RATE_MBPS:.2f} MB/s")
 
 print("\n----- SD WRITE -----")
 print(f"WRITE_SPEED         : {CARD_WRITE_SPEED_MBPS:.2f} MB/s")
-
-# -----------------------------
-# Validate
-# -----------------------------
-if ADC_BITS not in (10, 12, 14, 16):
-    raise ValueError(f"Unsupported ADC_BITS = {ADC_BITS}")
-
-if SAMPLES_PER_CHIRP <= 0:
-    raise ValueError("SAMPLES_PER_CHIRP is zero")
-
-expected_chirps = CPI_COUNTER * CHIRPS_PER_CPI
-
-if expected_chirps <= 0:
-    raise ValueError("expected_chirps is zero")
-
-
-# -----------------------------
-# Print info
-# -----------------------------
-print("\n----- INFO -----")
-print(f"FS                : {FS_KHZ / 1000:.3f} MHz")
-print(f"ADC_BITS          : {ADC_BITS}")
-print(f"SAMPLES_PER_CHIRP : {SAMPLES_PER_CHIRP}")
-print(f"CHIRPS_PER_CPI    : {CHIRPS_PER_CPI}")
-print(f"CPI_COUNTER       : {CPI_COUNTER}")
-print(f"EXPECTED CHIRPS   : {expected_chirps}")
 
 
 # -----------------------------
@@ -215,6 +191,8 @@ if available_chirps <= 0:
 unused_words = len(adc_u16) - available_chirps * words_per_chirp
 
 adc_u16 = adc_u16[:available_chirps * words_per_chirp]
+
+# 2d array is created with number of chirps, number of words per one chirp (number of 16 bit adc data)
 chirps_raw = adc_u16.reshape(available_chirps, words_per_chirp)
 
 if USE_SYNC_HEADERS:
@@ -225,6 +203,7 @@ if USE_SYNC_HEADERS:
         (chirps_raw[:, 3] != SYNC3)
     )[0]
 
+    # take each row and to each row get rid of header from adc data
     chirps = chirps_raw[:, HEADER_SIZE:]
 
     print("\n----- SYNC -----")
@@ -249,186 +228,50 @@ num_chirps = len(chirps)
 if num_chirps == 0:
     raise RuntimeError("No valid chirps found")
 
+# -----------------------------
+# ADC handling
+# -----------------------------
 ADC_MASK = (1 << ADC_BITS) - 1
-ADC_CENTER = float(1 << (ADC_BITS - 1))
+ADC_CENTER = 1 << (ADC_BITS - 1)
+ADC_FS = ADC_CENTER
+
+print("\n----- RAW ADC CHECK -----")
+print(f"Raw min            : {int(chirps.min())}")
+print(f"Raw max            : {int(chirps.max())}")
+print(f"Raw mean           : {float(chirps.mean()):.2f}")
 
 chirps = chirps & ADC_MASK
 chirps = chirps.astype(np.float32) - ADC_CENTER
 
-# -----------------------------
-# Keep only full CPIs
-# -----------------------------
-num_cpis = num_chirps // CHIRPS_PER_CPI
-num_chirps_used = num_cpis * CHIRPS_PER_CPI
+# Normalize data
+chirps = chirps / ADC_FS
 
+num_cpis = len(chirps) // CHIRPS_PER_CPI
 if num_cpis == 0:
     raise RuntimeError("Not enough chirps for one full CPI")
 
-chirps = chirps[:num_chirps_used]
-chirps_3d = chirps.reshape(num_cpis, CHIRPS_PER_CPI, SAMPLES_PER_CHIRP)
+chirps = chirps[: num_cpis * CHIRPS_PER_CPI]
 
-print("Num CPIs      :", num_cpis)
-print("Chirps used   :", num_chirps_used)
-
-
-# -----------------------------
-# Fast-time window and FFT axes
-# -----------------------------
-w = np.hanning(SAMPLES_PER_CHIRP).astype(np.float32)
-
-freq_hz = np.fft.rfftfreq(SAMPLES_PER_CHIRP, d=1.0 / FS)
-
-if HZ_PER_M > 0:
-    range_m = freq_hz / HZ_PER_M
-else:
-    range_m = np.arange(len(freq_hz), dtype=np.float32)
+# form 3d data from chirps to add data to track across cpi to cpi
+cube = chirps.reshape(num_cpis, CHIRPS_PER_CPI, SAMPLES_PER_CHIRP)
+print(f"Loaded {num_cpis} CPIs ({num_cpis * CHIRPS_PER_CPI} chirps)")
 
 
-# -----------------------------
-# Complex range FFT cube
-# -----------------------------
-print("\nComputing complex FFTs...")
+# ------------------------
+# Range FFT (fast time), vectorized over the whole cube
+# ------------------------
+win = np.hanning(SAMPLES_PER_CHIRP).astype(np.float32)
 
-x = chirps_3d.copy()
-x = x - np.mean(x, axis=2, keepdims=True)
-x = x * w[None, None, :]
+# Remove dc per chirp
+x = cube - np.mean(cube, axis = 2, keepdims=True)
+
+# apply window to adc samples only
+x = x * win[None, None, :] 
 
 range_fft = np.fft.rfft(x, axis=2)
 
 
-# -----------------------------
-# Auto-pick strong range bin
-# -----------------------------
-flat_fft = range_fft.reshape(-1, range_fft.shape[2])
-num_avg = min(AVG_CHIRPS_FOR_BIN_PICK, flat_fft.shape[0])
-
-avg_mag = np.mean(np.abs(flat_fft[:num_avg]), axis=0)
-
-valid = np.where(range_m <= MAX_RANGE_TO_SHOW)[0]
-valid = valid[valid >= IGNORE_FIRST_BINS]
-
-if len(valid) == 0:
-    raise ValueError("No valid range bins")
-
-if AUTO_PICK_BIN:
-    track_bin = valid[np.argmax(avg_mag[valid])]
-else:
-    track_bin = FORCED_BIN
-
-track_range_m = range_m[track_bin]
-track_freq_hz = freq_hz[track_bin]
-
-print("\n----- TRACKED BIN -----")
-print(f"track_bin    : {track_bin}")
-print(f"track_freq   : {track_freq_hz/1e3:.2f} kHz")
-print(f"track_range  : {track_range_m:.2f} m")
 
 
-# -----------------------------
-# Extract tracked complex bin
-# -----------------------------
-tracked = range_fft[:, :, track_bin]
-
-phase_chirp_wrapped = np.angle(tracked)
-phase_chirp_unwrapped = np.unwrap(phase_chirp_wrapped, axis=1)
-
-cpi_complex = np.mean(tracked, axis=1)
-phase_cpi_wrapped = np.angle(cpi_complex)
-phase_cpi_unwrapped = np.unwrap(phase_cpi_wrapped)
-
-phase_step_chirp = np.angle(tracked[:, 1:] * np.conj(tracked[:, :-1]))
-phase_step_cpi = np.angle(cpi_complex[1:] * np.conj(cpi_complex[:-1]))
-
-chirp_idx = np.arange(CHIRPS_PER_CPI)
-cpi_idx = np.arange(num_cpis)
 
 
-# -----------------------------
-# Display
-# -----------------------------
-plt.ion()
-fig, ax = plt.subplots(2, 2, figsize=(14, 8))
-
-line_cw, = ax[0, 0].plot([], [], lw=1.0)
-line_cu, = ax[1, 0].plot([], [], lw=1.0)
-
-line_pw, = ax[0, 1].plot([], [], lw=1.0)
-line_pu, = ax[1, 1].plot([], [], lw=1.0)
-
-ax[0, 0].set_title("Chirp-to-Chirp Phase (wrapped)")
-ax[1, 0].set_title("Chirp-to-Chirp Phase (unwrapped)")
-ax[0, 1].set_title("CPI-to-CPI Phase (wrapped)")
-ax[1, 1].set_title("CPI-to-CPI Phase (unwrapped)")
-
-ax[0, 0].set_xlabel("Chirp index in CPI")
-ax[1, 0].set_xlabel("Chirp index in CPI")
-ax[0, 1].set_xlabel("CPI index")
-ax[1, 1].set_xlabel("CPI index")
-
-ax[0, 0].set_ylabel("Phase (rad)")
-ax[1, 0].set_ylabel("Phase (rad)")
-ax[0, 1].set_ylabel("Phase (rad)")
-ax[1, 1].set_ylabel("Phase (rad)")
-
-for a in ax.flatten():
-    a.grid(True)
-
-ax[0, 0].set_xlim(0, CHIRPS_PER_CPI - 1)
-ax[1, 0].set_xlim(0, CHIRPS_PER_CPI - 1)
-ax[0, 1].set_xlim(0, num_cpis - 1)
-ax[1, 1].set_xlim(0, num_cpis - 1)
-
-ax[0, 0].set_ylim(-np.pi - 0.2, np.pi + 0.2)
-ax[0, 1].set_ylim(-np.pi - 0.2, np.pi + 0.2)
-
-chirp_unwrap_min = np.min(phase_chirp_unwrapped)
-chirp_unwrap_max = np.max(phase_chirp_unwrapped)
-
-if np.isclose(chirp_unwrap_min, chirp_unwrap_max):
-    chirp_unwrap_min -= 1
-    chirp_unwrap_max += 1
-
-ax[1, 0].set_ylim(chirp_unwrap_min - 0.2, chirp_unwrap_max + 0.2)
-
-cpi_unwrap_min = np.min(phase_cpi_unwrapped)
-cpi_unwrap_max = np.max(phase_cpi_unwrapped)
-
-if np.isclose(cpi_unwrap_min, cpi_unwrap_max):
-    cpi_unwrap_min -= 1
-    cpi_unwrap_max += 1
-
-ax[1, 1].set_ylim(cpi_unwrap_min - 0.2, cpi_unwrap_max + 0.2)
-
-fig.suptitle("Phase Stability Check", fontsize=14)
-fig.tight_layout()
-
-
-# -----------------------------
-# Live playback
-# -----------------------------
-for cpi_i in range(0, num_cpis, DISPLAY_EVERY_N_CPI):
-
-    y_left_wrapped = phase_chirp_wrapped[cpi_i]
-    y_left_unwrapped = phase_chirp_unwrapped[cpi_i]
-
-    line_cw.set_data(chirp_idx, y_left_wrapped)
-    line_cu.set_data(chirp_idx, y_left_unwrapped)
-
-    x_right = cpi_idx[:cpi_i + 1]
-    y_right_wrapped = phase_cpi_wrapped[:cpi_i + 1]
-    y_right_unwrapped = phase_cpi_unwrapped[:cpi_i + 1]
-
-    line_pw.set_data(x_right, y_right_wrapped)
-    line_pu.set_data(x_right, y_right_unwrapped)
-
-    fig.suptitle(
-        f"Phase Stability Check | CPI {cpi_i + 1}/{num_cpis} | "
-        f"bin={track_bin} | range={track_range_m:.2f} m",
-        fontsize=14
-    )
-
-    fig.canvas.draw_idle()
-    plt.pause(0.001)
-
-plt.ioff()
-plt.show()
