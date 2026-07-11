@@ -15,7 +15,7 @@ SYNC3 = 0x00FF
 if OPERATING_SYSTEM == 1:
     #BIN_FILE = "Radar_Records/data_record.bin"
     #BIN_FILE = "/home/ck/Desktop/flight_log.bin"
-    BIN_FILE = "fmcw2_bin_files/road_log10_resized.bin"
+    BIN_FILE = "fmcw2_bin_files/hwfir_terrace.bin"
 
 elif OPERATING_SYSTEM == 2:
     BIN_FILE = r"C:\Users\CK\Desktop\flight_log.bin"
@@ -233,8 +233,10 @@ if num_chirps == 0:
 # -----------------------------
 ADC_MASK = (1 << ADC_BITS) - 1
 ADC_CENTER = 1 << (ADC_BITS - 1)
-ADC_FS = ADC_CENTER
-
+C = 299_792_458.0            # speed of light, m/s
+F_CENTER = SWEEP_START + SWEEP_BW / 2.0
+WAVELENGTH = C / F_CENTER if F_CENTER > 0 else None
+ 
 print("\n----- RAW ADC CHECK -----")
 print(f"Raw min            : {int(chirps.min())}")
 print(f"Raw max            : {int(chirps.max())}")
@@ -244,7 +246,7 @@ chirps = chirps & ADC_MASK
 chirps = chirps.astype(np.float32) - ADC_CENTER
 
 # Normalize data
-chirps = chirps / ADC_FS
+chirps = chirps / ADC_CENTER
 
 num_cpis = len(chirps) // CHIRPS_PER_CPI
 if num_cpis == 0:
@@ -263,15 +265,86 @@ print(f"Loaded {num_cpis} CPIs ({num_cpis * CHIRPS_PER_CPI} chirps)")
 win = np.hanning(SAMPLES_PER_CHIRP).astype(np.float32)
 
 # Remove dc per chirp
+# axis 0 CPI frames
+# axis 1 chirp index
+# axis 2 adc samples
 x = cube - np.mean(cube, axis = 2, keepdims=True)
 
 # apply window to adc samples only
 x = x * win[None, None, :] 
 
-range_fft = np.fft.rfft(x, axis=2)
+# fft over adc sample 
+range_fft = np.fft.rfft(x, axis=2) 
 
+# Create freq array with bin steps
+freq_hz = np.fft.rfftfreq(SAMPLES_PER_CHIRP, d=1.0 / FS)
 
+# Create range array from freq with range resolution steps
+range_m = freq_hz / HZ_PER_M if HZ_PER_M > 0 else np.arange(len(freq_hz))
 
+# ------------------------
+# Pick the range bin to track
+# ------------------------
+avg_mag = np.mean(np.abs(range_fft), axis=(0,1))
+valid = np.where(range_m <= MAX_RANGE_TO_SHOW)[0]
+valid = valid[valid >= IGNORE_FIRST_BINS]
+if len(valid) == 0:
+    raise ValueError("No valid range bins in search window")
 
-
-
+track_bin = valid[np.argmax(avg_mag[valid])] if AUTO_PICK_BIN else FORCED_BIN
+print(f"Tracking bin {track_bin} -> range {range_m[track_bin]:.2f} m")
+ 
+# -----------------------------
+# Phase extraction
+# -----------------------------
+tracked = range_fft[:, :, track_bin]               # (num_cpis, chirps_per_cpi) complex
+ 
+# chirp-to-chirp phase within one representative CPI (fast-time view)
+phase_chirp = np.unwrap(np.angle(tracked[0]))
+ 
+# CPI-to-CPI phase from the coherently averaged complex value per CPI
+cpi_complex = np.mean(tracked, axis=1)
+phase_cpi = np.unwrap(np.angle(cpi_complex))
+ 
+# -----------------------------
+# Phase noise floor: remove linear trend (true target motion/drift),
+# std of the residual is the actual phase noise of the system.
+# -----------------------------
+cpi_idx = np.arange(num_cpis)
+trend = np.polyfit(cpi_idx, phase_cpi, 1)
+residual = phase_cpi - np.polyval(trend, cpi_idx)
+phase_noise_std = np.std(residual)
+ 
+print(f"\nPhase noise floor (CPI-to-CPI, detrended): {phase_noise_std:.4f} rad")
+ 
+disp_noise_um = None
+if WAVELENGTH is not None:
+    # two-way propagation: phase = 4*pi*R/lambda  ->  sigma_R = sigma_phase * lambda / (4*pi)
+    disp_noise_um = phase_noise_std * WAVELENGTH / (4 * np.pi) * 1e6
+    print(f"Equivalent displacement noise floor: {disp_noise_um:.3f} um")
+ 
+# -----------------------------
+# Plots
+# -----------------------------
+fig, ax = plt.subplots(2, 1, figsize=(10, 7))
+ 
+ax[0].plot(phase_chirp)
+ax[0].set_title(f"Chirp-to-chirp phase, CPI 0, bin {track_bin} ({range_m[track_bin]:.2f} m)")
+ax[0].set_xlabel("Chirp index")
+ax[0].set_ylabel("Phase (rad, unwrapped)")
+ax[0].grid(True)
+ 
+ax[1].plot(cpi_idx, phase_cpi, label="Unwrapped phase")
+ax[1].plot(cpi_idx, np.polyval(trend, cpi_idx), "--", label="Linear trend (motion)")
+title = f"CPI-to-CPI phase | noise floor = {phase_noise_std:.4f} rad"
+if disp_noise_um is not None:
+    title += f" ({disp_noise_um:.3f} um)"
+ax[1].set_title(title)
+ax[1].set_xlabel("CPI index")
+ax[1].set_ylabel("Phase (rad, unwrapped)")
+ax[1].legend()
+ax[1].grid(True)
+ 
+fig.tight_layout()
+plt.show()
+ 
