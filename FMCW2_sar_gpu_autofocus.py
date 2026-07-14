@@ -24,8 +24,7 @@ INFO_SECTOR_SIZE = 512
 # CUT NUMBER OF CPI FROM START AND END
 # ============================================================
 CUT_START_CPI = 0
-CUT_END_CPI = 0
-
+CUT_END_CPI = 50
 
 # ============================================================
 # SAR SETTINGS FOR YOUR CAR SETUP
