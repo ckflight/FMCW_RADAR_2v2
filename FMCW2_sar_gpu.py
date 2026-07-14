@@ -13,7 +13,7 @@ except ImportError as e:
 # ============================================================
 # BIN FILE SETTINGS
 # ============================================================
-BIN_FILE = "fmcw2_bin_files/sar_log4.bin"
+BIN_FILE = "fmcw2_bin_files/sar_log5.bin"
 
 USE_SYNC_HEADERS = True
 HEADER_SIZE = 4
@@ -24,19 +24,19 @@ INFO_SECTOR_SIZE = 512
 # SD-CARD RECORD CUT SETTINGS
 # ============================================================
 CUT_START_CPI = 0
-CUT_END_CPI = 0
+CUT_END_CPI = 50
 
 # ============================================================
 # USER PARAMETERS
 # ============================================================
-speed = 0.8                 # platform speed, m/s -- tune this
+speed = 2.8                 # platform speed, m/s -- tune this
 
-dynamic_range = 40
-cross_range_padding = 4
-ky_delta_spacing = 1.5
-remove_leakage_bins = 5
-remove_static_clutter = False
-use_rvp = True
+dynamic_range           = 40
+cross_range_padding     = 4
+ky_delta_spacing        = 1.5
+remove_leakage_bins     = 5
+remove_static_clutter   = True
+use_rvp                 = True
 
 c = 299792458.0
 
@@ -286,6 +286,10 @@ del chirps_raw, adc_u16, raw_data, file_bytes
 usable_chirps = full_cpi_count * CHIRPS_PER_CPI
 chirps = chirps[:usable_chirps]
 
+# Example: 3D array N CPIs x 2D (128 x ADC SAMPLES)
+# Axis 2 the samples within one chirp
+# Axis 1 groups 128 consecutive chirps per CPI
+# Axis 0 (size full_cpi_count = 160)
 chirps_cpi = chirps.reshape(full_cpi_count, CHIRPS_PER_CPI, SAMPLES_PER_CHIRP)
 del chirps
 
@@ -299,19 +303,12 @@ num_cpi_used = chirps_cpi.shape[0]
 print(f"Using {num_cpi_used} CPIs")
 
 # ============================================================
-# COHERENT PER-CPI AVERAGE  <<< the key fix >>>
-# The 64/128 chirps inside a CPI sit at ~sub-mm spacing -- essentially the
-# same physical position for imaging purposes. Collapse each CPI to ONE
-# slow-time row. This is what removes the fabricated-interpolation problem
-# and the memory blowup: aperture size goes from
-# (num_CPI * chirps_per_CPI) rows down to just num_CPI rows.
+# Average chirps per cpi since sdcard write makes data not uniform
 # ============================================================
 data1 = chirps_cpi.mean(axis=1)  # -> [num_cpi_used, NUMBER_OF_SAMPLES]
 del chirps_cpi
 
-# ============================================================
-# TRUE CPI SPACING -> cross-range sample spacing
-# ============================================================
+
 chirp_period = (SWEEP_TIME_US + SWEEP_GAP_US) * 1e-6
 
 if (CPI_END_TIMER_US + CARD_WRITE_END_TIMER_US) > 0:
@@ -331,6 +328,8 @@ print(f"delta_crange = {delta_crange*1000:.2f} mm per CPI")
 # MOVE TO GPU
 # ============================================================
 t_gpu_start = time.time()
+
+# Move data from cpu ram to gpu memory
 data = cp.asarray(data1, dtype=cp.float64)
 del data1
 
@@ -338,33 +337,32 @@ fs = FS
 tsweep = SWEEP_TIME
 bw = SWEEP_BW
 fc = SWEEP_START + bw / 2.0
-sweep_samples = data.shape[1]
+sweep_samples = data.shape[1] 
 lam = c / fc
 
 print(f"Cross-range delta {delta_crange:.6f} m, {delta_crange/lam:.4f} lambda")
 print(f"Carrier {fc/1e9:.3f} GHz")
 
-# ============================================================
-# PREPROCESSING (GPU)
-# ============================================================
+# remove dc offset found by the average from chirps
 data = data - cp.mean(data, axis=1, keepdims=True)
 
+# create window and apply it to the axis 1 data
 wf = cp.hanning(sweep_samples)
 data = data * wf
 
+# Sar imaging needs complex IQ data for phase so Hilber transform does that also
+# RVP corrects if beat signal phase by one line multiplication.
 if use_rvp:
     data = hilbert_rvp_gpu(data, fs, bw / tsweep)
 
 if remove_static_clutter:
     data = data - cp.mean(data, axis=0, keepdims=True)
 
-# ============================================================
-# CROSS-RANGE ZERO PADDING
-# ============================================================
 if cross_range_padding > 1:
     zpad = int((cross_range_padding - 1) * data.shape[0])
     data = cp.pad(data, ((zpad // 2, zpad // 2), (0, 0)), mode="constant")
 
+# windows on axis 0 data
 ws = cp.hanning(data.shape[0])[:, None]
 data = data * ws
 
