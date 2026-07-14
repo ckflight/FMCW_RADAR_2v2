@@ -1,25 +1,3 @@
-"""
-GPU SAR processor for radar2v2 PRF/burst-mode .bin logs.
-
-KEY FIX vs your previous script:
-  Your acquisition is bursty: 64-128 chirps at ~250-500us spacing (sub-mm of
-  travel between them) followed by a ~32ms SD-write gap (~10cm+ of travel).
-  Resampling that onto one uniform grid at intra-burst spacing meant filling
-  the huge inter-CPI gaps with fabricated np.interp data -- that both wrecked
-  the image and blew up memory (a full-resolution uniform grid across the
-  whole aperture at sub-mm spacing is enormous).
-
-  Fix: the real independent spatial sample is one per CPI, not one per chirp.
-  Coherently average the chirps inside each CPI into a single row, and use
-  the *measured* CPI period (CPI_END_TIMER_US + CARD_WRITE_END_TIMER_US) as
-  the slow-time step. This collapses the aperture to num_CPI rows (small),
-  removes the fabricated-data problem, and is what should actually be Nyquist
-  checked for your antenna beamwidth.
-
-Requires: cupy (matching your CUDA version), e.g.
-  pip install cupy-cuda12x
-"""
-
 import time
 import numpy as np
 import matplotlib.pyplot as plt
@@ -47,8 +25,6 @@ INFO_SECTOR_SIZE = 512
 # ============================================================
 CUT_START_CPI = 0
 CUT_END_CPI = 0
-CUT_START_PERCENT = 0.00
-CUT_END_PERCENT = 0.00
 
 # ============================================================
 # USER PARAMETERS
@@ -59,7 +35,7 @@ dynamic_range = 40
 cross_range_padding = 4
 ky_delta_spacing = 1.5
 remove_leakage_bins = 5
-remove_static_clutter = True
+remove_static_clutter = False
 use_rvp = True
 
 c = 299792458.0
@@ -318,12 +294,6 @@ end_cpi = full_cpi_count - CUT_END_CPI
 if end_cpi <= start_cpi:
     raise RuntimeError("Invalid CUT_START_CPI / CUT_END_CPI")
 chirps_cpi = chirps_cpi[start_cpi:end_cpi]
-
-p_start = int(chirps_cpi.shape[0] * CUT_START_PERCENT)
-p_end = chirps_cpi.shape[0] - int(chirps_cpi.shape[0] * CUT_END_PERCENT)
-if p_end <= p_start:
-    raise RuntimeError("Invalid CUT_START_PERCENT / CUT_END_PERCENT")
-chirps_cpi = chirps_cpi[p_start:p_end]
 
 num_cpi_used = chirps_cpi.shape[0]
 print(f"Using {num_cpi_used} CPIs")
